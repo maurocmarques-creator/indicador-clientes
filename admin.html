@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cadastro de Cliente — Indicador PortoEx</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="auth.js"></script>
+<style>
+  :root{--primary:#1a3a5c;--primary-light:#2563a8;--border:#e2e8f0;--gray:#64748b;--bg:#f1f5f9}
+  *{box-sizing:border-box}
+  body{font-family:'Segoe UI',sans-serif;background:var(--bg);margin:0;color:#1e293b}
+  header{background:var(--primary);color:#fff;padding:14px 24px;display:flex;align-items:center;justify-content:space-between}
+  header h1{font-size:1.15rem;margin:0}
+  header a{color:#cfe0f0;font-size:.82rem;text-decoration:none}
+  header a:hover{text-decoration:underline}
+  #user-info{display:flex;align-items:center;gap:12px;font-size:.78rem}
+  #user-info button{background:#2a4d73;color:#fff;border:0;border-radius:6px;padding:6px 12px;font-size:.76rem;font-weight:600;cursor:pointer}
+  main{max-width:960px;margin:24px auto;padding:0 20px 60px}
+  .card{background:#fff;border:1px solid var(--border);border-radius:10px;padding:20px 22px;margin-bottom:20px}
+  .card h2{font-size:1rem;margin:0 0 14px}
+  label{display:block;font-size:.78rem;font-weight:600;color:#334155;margin-bottom:4px}
+  input[type=text],input[type=email],input[type=password]{width:100%;border:1px solid var(--border);border-radius:7px;padding:8px 10px;font-size:.86rem;margin-bottom:12px}
+  .row{display:flex;gap:14px;flex-wrap:wrap}
+  .row > div{flex:1;min-width:200px}
+  .paineis{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:6px 14px;margin-bottom:14px}
+  .paineis label{display:flex;align-items:center;gap:6px;font-weight:400;font-size:.82rem;margin-bottom:0}
+  .paineis input{width:auto;margin:0}
+  button.primario{background:var(--primary);color:#fff;border:0;border-radius:8px;padding:10px 18px;font-size:.88rem;font-weight:700;cursor:pointer}
+  button.primario:hover{filter:brightness(1.12)}
+  button.secundario{background:#e2e8f0;color:#334155;border:0;border-radius:8px;padding:9px 16px;font-size:.84rem;font-weight:600;cursor:pointer;margin-left:8px}
+  .msg{border-radius:7px;padding:9px 12px;font-size:.82rem;margin-bottom:14px;display:none}
+  .msg.ok{background:#ecfdf5;color:#047857;display:block}
+  .msg.erro{background:#fdecec;color:#b91c1c;display:block}
+  table{width:100%;border-collapse:collapse;font-size:.84rem}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--border)}
+  th{color:var(--gray);font-weight:600;font-size:.76rem;text-transform:uppercase}
+  .pill{display:inline-block;background:#e2e8f0;color:#334155;border-radius:20px;padding:2px 9px;font-size:.72rem;margin:1px}
+  .ativo{color:#047857;font-weight:700}
+  .inativo{color:#b91c1c;font-weight:700}
+  .acao{background:none;border:1px solid var(--border);border-radius:6px;padding:4px 9px;font-size:.74rem;cursor:pointer;margin-right:4px}
+  .acao:hover{background:var(--bg)}
+  .hint{color:var(--gray);font-size:.76rem;margin:-8px 0 14px}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Cadastro de Cliente — Indicador PortoEx</h1>
+  <div id="user-info"></div>
+</header>
+
+<main>
+
+  <div class="card">
+    <h2>Novo cliente</h2>
+    <div id="msg-novo" class="msg"></div>
+    <form id="form-cliente">
+      <input type="hidden" id="cliente-id">
+      <div class="row">
+        <div>
+          <label for="nome">Nome do cliente</label>
+          <input type="text" id="nome" required>
+        </div>
+        <div>
+          <label for="nomes-portal">Nome(s) no portal Brudam (separados por vírgula)</label>
+          <input type="text" id="nomes-portal" placeholder="Ex.: ANSELL, HERCULES" required>
+        </div>
+      </div>
+      <p class="hint">Use exatamente como aparece no Brudam — o pipeline usa isso pra saber quais linhas são deste cliente.</p>
+
+      <label>Painéis liberados</label>
+      <div class="paineis" id="paineis-checkboxes"></div>
+
+      <label style="display:inline-flex;align-items:center;gap:6px;font-weight:400">
+        <input type="checkbox" id="ativo" checked style="width:auto"> Cliente ativo
+      </label>
+
+      <div style="margin-top:16px">
+        <button type="submit" class="primario" id="btn-salvar">Salvar cliente</button>
+        <button type="button" class="secundario" id="btn-cancelar-edicao" style="display:none">Cancelar edição</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>Vincular login a um cliente</h2>
+    <p class="hint">Crie antes o login (e-mail + senha) em Supabase → Authentication → Users, depois vincule aqui o e-mail ao cliente e ao papel.</p>
+    <div id="msg-vinculo" class="msg"></div>
+    <form id="form-vinculo">
+      <div class="row">
+        <div>
+          <label for="v-email">E-mail (já criado no Supabase Auth)</label>
+          <input type="email" id="v-email" required>
+        </div>
+        <div>
+          <label for="v-nome">Nome da pessoa</label>
+          <input type="text" id="v-nome" required>
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label for="v-role">Papel</label>
+          <select id="v-role" style="width:100%;border:1px solid var(--border);border-radius:7px;padding:8px 10px;font-size:.86rem;margin-bottom:12px">
+            <option value="cliente">Cliente</option>
+            <option value="admin">Admin (PortoEx)</option>
+          </select>
+        </div>
+        <div id="v-cliente-wrap">
+          <label for="v-cliente">Cliente</label>
+          <select id="v-cliente" style="width:100%;border:1px solid var(--border);border-radius:7px;padding:8px 10px;font-size:.86rem;margin-bottom:12px"></select>
+        </div>
+      </div>
+      <button type="submit" class="primario">Vincular login</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>Clientes cadastrados</h2>
+    <table>
+      <thead><tr><th>Nome</th><th>Nomes no Brudam</th><th>Painéis</th><th>Status</th><th></th></tr></thead>
+      <tbody id="tbody-clientes"></tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>Logins vinculados</h2>
+    <table>
+      <thead><tr><th>Nome</th><th>Papel</th><th>Cliente</th></tr></thead>
+      <tbody id="tbody-profiles"></tbody>
+    </table>
+  </div>
+
+</main>
+
+<script>
+const PAINEIS = [
+  ['totais', 'Totais'],
+  ['totais-cx', 'Totais por CX'],
+  ['performance', 'Performance'],
+  ['perf-dest', 'Performance Destino'],
+  ['resumo-dest', 'Resumo Destino'],
+  ['barra-perf', 'Barra Performance'],
+  ['transito', 'Em Trânsito'],
+  ['ocorrencias', 'Ocorrências'],
+  ['antecipadas', 'Antecipadas'],
+  ['statusnf', 'Status NF'],
+  ['expectativa', 'Expectativa'],
+  ['mapa', 'Mapa'],
+];
+
+function montarCheckboxesPaineis() {
+  const wrap = document.getElementById('paineis-checkboxes');
+  wrap.innerHTML = PAINEIS.map(([id, label]) => `
+    <label><input type="checkbox" value="${id}" class="chk-painel"> ${label}</label>
+  `).join('');
+}
+
+function mostrarMsg(id, texto, tipo) {
+  const el = document.getElementById(id);
+  el.textContent = texto;
+  el.className = 'msg ' + tipo;
+}
+
+let CLIENTES_CACHE = [];
+
+async function carregarClientes() {
+  const { data, error } = await supabaseClient.from('clientes').select('*').order('nome');
+  if (error) { console.error(error); return; }
+  CLIENTES_CACHE = data || [];
+
+  const tbody = document.getElementById('tbody-clientes');
+  tbody.innerHTML = CLIENTES_CACHE.map(c => `
+    <tr>
+      <td>${c.nome}</td>
+      <td>${(c.nomes_portal || []).join(', ')}</td>
+      <td>${(c.paineis_permitidos || []).map(p => `<span class="pill">${p}</span>`).join('') || '—'}</td>
+      <td class="${c.ativo ? 'ativo' : 'inativo'}">${c.ativo ? 'Ativo' : 'Inativo'}</td>
+      <td><button type="button" class="acao" onclick="editarCliente('${c.id}')">Editar</button></td>
+    </tr>
+  `).join('') || '<tr><td colspan="5" style="color:var(--gray)">Nenhum cliente cadastrado ainda.</td></tr>';
+
+  const selCliente = document.getElementById('v-cliente');
+  selCliente.innerHTML = CLIENTES_CACHE.map(c => `<option value="${c.id}">${c.nome}</option>`).join('');
+}
+
+async function carregarProfiles() {
+  const { data, error } = await supabaseClient
+    .from('profiles')
+    .select('nome, role, clientes(nome)')
+    .order('nome');
+  if (error) { console.error(error); return; }
+  const tbody = document.getElementById('tbody-profiles');
+  tbody.innerHTML = (data || []).map(p => `
+    <tr>
+      <td>${p.nome}</td>
+      <td>${p.role === 'admin' ? 'Admin' : 'Cliente'}</td>
+      <td>${p.clientes ? p.clientes.nome : '—'}</td>
+    </tr>
+  `).join('') || '<tr><td colspan="3" style="color:var(--gray)">Nenhum login vinculado ainda.</td></tr>';
+}
+
+function editarCliente(id) {
+  const c = CLIENTES_CACHE.find(x => x.id === id);
+  if (!c) return;
+  document.getElementById('cliente-id').value = c.id;
+  document.getElementById('nome').value = c.nome;
+  document.getElementById('nomes-portal').value = (c.nomes_portal || []).join(', ');
+  document.getElementById('ativo').checked = !!c.ativo;
+  document.querySelectorAll('.chk-painel').forEach(chk => {
+    chk.checked = (c.paineis_permitidos || []).includes(chk.value);
+  });
+  document.getElementById('btn-salvar').textContent = 'Atualizar cliente';
+  document.getElementById('btn-cancelar-edicao').style.display = 'inline-block';
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+document.getElementById('btn-cancelar-edicao').addEventListener('click', () => {
+  document.getElementById('form-cliente').reset();
+  document.getElementById('cliente-id').value = '';
+  document.querySelectorAll('.chk-painel').forEach(chk => chk.checked = false);
+  document.getElementById('btn-salvar').textContent = 'Salvar cliente';
+  document.getElementById('btn-cancelar-edicao').style.display = 'none';
+});
+
+document.getElementById('form-cliente').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const id = document.getElementById('cliente-id').value;
+  const nome = document.getElementById('nome').value.trim();
+  const nomesPortal = document.getElementById('nomes-portal').value.split(',').map(s => s.trim()).filter(Boolean);
+  const paineis = Array.from(document.querySelectorAll('.chk-painel:checked')).map(c => c.value);
+  const ativo = document.getElementById('ativo').checked;
+
+  const payload = { nome, nomes_portal: nomesPortal, paineis_permitidos: paineis, ativo };
+  const { error } = id
+    ? await supabaseClient.from('clientes').update(payload).eq('id', id)
+    : await supabaseClient.from('clientes').insert(payload);
+
+  if (error) {
+    mostrarMsg('msg-novo', 'Erro ao salvar: ' + error.message, 'erro');
+    return;
+  }
+  mostrarMsg('msg-novo', id ? 'Cliente atualizado.' : 'Cliente criado.', 'ok');
+  document.getElementById('form-cliente').reset();
+  document.getElementById('cliente-id').value = '';
+  document.querySelectorAll('.chk-painel').forEach(chk => chk.checked = false);
+  document.getElementById('btn-salvar').textContent = 'Salvar cliente';
+  document.getElementById('btn-cancelar-edicao').style.display = 'none';
+  await carregarClientes();
+});
+
+document.getElementById('v-role').addEventListener('change', (e) => {
+  document.getElementById('v-cliente-wrap').style.display = e.target.value === 'admin' ? 'none' : 'block';
+});
+
+document.getElementById('form-vinculo').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const email = document.getElementById('v-email').value.trim();
+  const nome = document.getElementById('v-nome').value.trim();
+  const role = document.getElementById('v-role').value;
+  const clienteId = role === 'admin' ? null : document.getElementById('v-cliente').value;
+
+  // auth.users nao e acessivel via RLS direto do client; o id do usuario
+  // vem de uma RPC dedicada (buscar_auth_user_id, schema_etapa3.sql).
+  const { data: idResp, error: erroId } = await supabaseClient
+    .rpc('buscar_auth_user_id', { p_email: email });
+
+  if (erroId || !idResp) {
+    mostrarMsg('msg-vinculo', 'Não encontrei nenhum login com esse e-mail no Supabase Auth. Crie o login primeiro em Authentication → Users.', 'erro');
+    return;
+  }
+
+  const { error } = await supabaseClient.from('profiles').upsert({
+    id: idResp,
+    nome,
+    role,
+    cliente_id: clienteId,
+  });
+
+  if (error) {
+    mostrarMsg('msg-vinculo', 'Erro ao vincular: ' + error.message, 'erro');
+    return;
+  }
+  mostrarMsg('msg-vinculo', 'Login vinculado com sucesso.', 'ok');
+  document.getElementById('form-vinculo').reset();
+  await carregarProfiles();
+});
+
+function montarUserInfo(perfil) {
+  const el = document.getElementById('user-info');
+  el.innerHTML = `
+    <span>${perfil.nome} (admin)</span>
+    <a href="index.html" style="color:#cfe0f0;margin-left:12px">Voltar ao Indicador</a>
+    <button type="button" onclick="logout()">Sair</button>
+  `;
+}
+
+(async function initAdmin() {
+  const perfil = await window.authPronto;
+  if (!perfil) return;
+  if (perfil.role !== 'admin') {
+    location.href = 'index.html';
+    return;
+  }
+  montarUserInfo(perfil);
+  montarCheckboxesPaineis();
+  await carregarClientes();
+  await carregarProfiles();
+})();
+</script>
+
+</body>
+</html>
