@@ -6,7 +6,17 @@
 - **Publishable key** (segura pra usar no navegador/index.html): `sb_publishable_lXegUG6Ry1uZI3lqnbKyQg_lv-Ivzv6`
 - **Organização**: "CAlculadora de Frete" no Supabase — mesma organização/conta do projeto Calculadora de Frete, mas é um **projeto separado** (banco de dados isolado), como combinado.
 
-A **secret key** (`sb_secret_...`) fica só com o Mauro — nunca neste repositório nem em nenhum arquivo versionado. Vai ser necessária só na Etapa 3 (criação de login de cliente via admin), e nesse momento decidimos onde ela mora com segurança (ex.: variável de ambiente de uma Supabase Edge Function, nunca no código do site).
+A **secret key** (`sb_secret_...`) fica só com o Mauro — nunca neste repositório nem em nenhum arquivo versionado. Usada só como variável de ambiente `SUPABASE_SERVICE_ROLE_KEY` na máquina que roda `pipeline_atualizar.py` (ver Etapa 4) — nunca no código do site.
+
+## Como criar o login de um cliente novo (passo a passo)
+
+A criação do login (e-mail + senha) é sempre manual, direto no painel do Supabase — o site nunca tem a secret key, então `admin.html` não consegue criar login sozinho, só vincular um e-mail já existente a um cliente.
+
+1. **Criar o login no Supabase**: abra `https://supabase.com/dashboard/project/fydoatntynvcwudxkhqv/auth/users` → botão **"Add user"** → **"Create new user"** → preencha e-mail e senha → marque **"Auto Confirm User"** (senão o login fica pendente de confirmação por e-mail, que não está configurado) → **"Create user"**.
+2. **Vincular esse login a um cliente**: abra `admin.html` (local ou publicado), logado como admin → card **"Vincular login a um cliente"** → preencha o mesmo e-mail, o nome da pessoa, papel **"Cliente"** e selecione o cliente → **"Vincular login"**.
+3. Pronto — a pessoa já pode entrar em `login.html` com esse e-mail/senha e só vê os painéis liberados pro cliente dela.
+
+Pra cadastrar um **admin** (acesso total, time PortoEx), mesmo passo 1, mas no passo 2 escolha papel **"Admin"** (não precisa selecionar cliente).
 
 ## Status
 
