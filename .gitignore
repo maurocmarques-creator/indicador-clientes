@@ -1,0 +1,6 @@
+downloads_tmp/
+desktop.ini
+__pycache__/
+pipeline.log
+pipeline.lock
+run_output.log

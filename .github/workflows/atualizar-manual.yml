@@ -1,0 +1,20 @@
+name: Atualizar Indicador Clientes (manual)
+
+# COPIADO do indicador-ansell em 01/10/2026 como ponto de partida -- este
+# workflow ainda roda a logica ANTIGA (pipeline de um cliente so, grava
+# direto no index.html). Precisa ser reescrito nas etapas 4/5 do projeto
+# multi-cliente (extrair todos os clientes, gravar no Supabase).
+
+on:
+  workflow_dispatch:
+
+jobs:
+  atualizar:
+    runs-on: self-hosted
+    # Roda direto na pasta do projeto que ja existe no PC -- sem clonar
+    # de novo, sem duplicar pipeline.lock/run_output.log/downloads_tmp.
+    steps:
+      - name: Rodar pipeline
+        working-directory: C:\Users\Mauro Cesar Marques\OneDrive - PORTOEXPRESS LOGISTICA LTDA\Indicador Clientes Geral
+        run: python pipeline_atualizar.py
+        shell: cmd
