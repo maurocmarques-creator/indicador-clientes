@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """
 extrair_portal.py — Automatiza a extracao do relatorio 106 (Emissoes) do
-portal Brudam (azportoex.brudam.com.br), um cliente por vez (a lista de
-clientes a extrair vem de fora -- ver pipeline_atualizar.py, que busca
-os clientes ativos no Supabase).
+portal Brudam (azportoex.brudam.com.br). Extrai TODOS os clientes numa
+unica pesquisa (campo "Cliente" em branco) -- cada linha ja vem com a
+coluna CLIENTE preenchida, entao o pipeline (pipeline_atualizar.py)
+separa por cliente depois, em vez de pedir uma extracao por nome de
+portal (isso nao escalaria com centenas de clientes).
 
 Repete, via navegador headless, exatamente o fluxo manual:
   login -> Operacional > Relatorios > 106 Emissoes
-  -> filtro Cliente + Data Emissao (01/01/<ano atual> ate ontem) -> Pesquisar
+  -> Data Emissao (01/01/<ano atual> ate ontem), Cliente em branco -> Pesquisar
   -> Personalizado Excel -> Meus relatorios -> "AUDITORIA TELA 106_ANSELL"
   -> Gerar (isso ja baixa o Excel correto)
 
@@ -15,10 +17,10 @@ Credenciais NUNCA ficam no codigo: vem das variaveis de ambiente
 PORTAL_USER e PORTAL_PASS (defina antes de rodar, ou configure como
 Secrets do GitHub quando isso for automatizado na nuvem).
 
-Uso (extracao manual de teste, um ou mais nomes do portal):
+Uso (extracao manual de teste):
   set PORTAL_USER=seu.usuario
   set PORTAL_PASS=sua.senha
-  python extrair_portal.py <pasta_de_saida> <Cliente1> [Cliente2 ...]
+  python extrair_portal.py <pasta_de_saida>
 """
 
 import os
@@ -54,34 +56,6 @@ def login(page, usuario, senha):
     log(f"Login OK, URL atual: {page.url}")
 
 
-def get_cliente_input(page):
-    """O campo de texto do filtro Cliente fica na linha seguinte ao
-    combobox 'Cliente', na mesma coluna da tabela — a pagina nao usa
-    id/name estaveis nesses campos. Ao voltar pra essa tela entre um
-    cliente e outro, a pagina pode levar um instante a mais pra montar
-    o select — espera ele existir de fato antes de procurar."""
-    page.wait_for_function(
-        "() => Array.from(document.querySelectorAll('select')).some(s => s.value === 'id_cliente')",
-        timeout=20000,
-    )
-    handle = page.evaluate_handle(
-        """
-        () => {
-            const sel = Array.from(document.querySelectorAll('select'))
-                .find(s => s.value === 'id_cliente');
-            const headerRow = sel.closest('tr');
-            const idx = Array.from(headerRow.children).indexOf(sel.closest('td'));
-            const dataRow = headerRow.nextElementSibling;
-            return dataRow.children[idx].querySelector('input[type=text]');
-        }
-        """
-    )
-    el = handle.as_element()
-    if el is None:
-        raise RuntimeError("Campo de filtro 'Cliente' nao encontrado na pagina")
-    return el
-
-
 def set_date_range(page, data_ini, data_fim):
     campos = page.locator("input.brd-periodo")
     campos.nth(0).fill(data_ini)
@@ -90,13 +64,14 @@ def set_date_range(page, data_ini, data_fim):
     page.keyboard.press("Escape")
 
 
-def extrair_cliente(page, cliente, data_ini, data_fim, pasta_saida: Path) -> Path:
-    log(f"\n=== Extraindo cliente: {cliente} ===")
+def extrair_todos(page, data_ini, data_fim, pasta_saida: Path) -> Path:
+    """Extrai o relatorio inteiro, sem preencher o filtro 'Cliente' --
+    traz todos os clientes do Brudam de uma vez (cada linha com a
+    coluna CLIENTE preenchida), em vez de uma extracao por nome de
+    portal."""
+    log("\n=== Extraindo TODOS os clientes ===")
     page.goto(RELATORIO_URL)
     page.wait_for_load_state("networkidle")
-
-    cliente_input = get_cliente_input(page)
-    cliente_input.fill(cliente)
 
     set_date_range(page, data_ini, data_fim)
 
@@ -116,7 +91,7 @@ def extrair_cliente(page, cliente, data_ini, data_fim, pasta_saida: Path) -> Pat
     page.get_by_role("radio", name=RELATORIO_PERSONALIZADO).check()
 
     pasta_saida.mkdir(parents=True, exist_ok=True)
-    destino = pasta_saida / f"{cliente.lower()}.xlsx"
+    destino = pasta_saida / "todos.xlsx"
 
     log("Clicando em Gerar (isso já gera o Excel correto)...")
     with page.expect_download(timeout=180000) as download_info:
@@ -142,11 +117,7 @@ def main():
         log("Defina as variaveis de ambiente PORTAL_USER e PORTAL_PASS antes de rodar.")
         sys.exit(1)
 
-    if len(sys.argv) < 3:
-        log("Uso: python extrair_portal.py <pasta_de_saida> <Cliente1> [Cliente2 ...]")
-        sys.exit(1)
-    pasta_saida = Path(sys.argv[1])
-    clientes = sys.argv[2:]
+    pasta_saida = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).parent / "downloads_tmp"
 
     hoje = date.today()
     data_ini = date(hoje.year, 1, 1).strftime("%d/%m/%Y")
@@ -160,16 +131,11 @@ def main():
         page.set_default_timeout(60000)
 
         login(page, usuario, senha)
-
-        arquivos = {}
-        for cliente in clientes:
-            arquivos[cliente] = extrair_cliente(page, cliente, data_ini, data_fim, pasta_saida)
+        destino = extrair_todos(page, data_ini, data_fim, pasta_saida)
 
         browser.close()
 
-    log("\nExtração concluída:")
-    for cliente, caminho in arquivos.items():
-        log(f"  {cliente}: {caminho}")
+    log(f"\nExtração concluída: {destino}")
 
 
 if __name__ == "__main__":

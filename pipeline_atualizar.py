@@ -2,16 +2,17 @@
 """
 pipeline_atualizar.py — Pipeline completo do Indicador Clientes (multi-tenant):
 
-  1. Busca no Supabase os clientes ativos (cadastrados via admin.html) e
-     os nomes de cada um no portal Brudam.
-  2. Extrai do portal Brudam o relatorio 106 (Emissoes), um nome de
-     portal por vez (Playwright) -- um cliente pode ter mais de um nome
-     no portal (ex.: um cliente so que aparece la como "Ansell" e
-     "Hercules"), extraidos separados e depois consolidados.
-  3. Pra cada cliente: consolida os nomes de portal dele numa planilha
-     so, converte em linhas e grava na tabela public.fretes do Supabase
-     (upsert por cliente_id+minuta), e registra ocorrencias novas em
-     public.ocorrencias_historico.
+  1. Extrai do portal Brudam o relatorio 106 (Emissoes) numa unica
+     pesquisa, SEM filtro de cliente (traz todos de uma vez -- nao
+     escalaria pedir uma extracao por cliente com centenas deles).
+  2. Descobre, pela coluna CLIENTE de cada linha, quais nomes ainda nao
+     batem com nenhum cliente cadastrado (nomes_portal) e cadastra esses
+     automaticamente como pendentes (inativos) -- revisao continua manual
+     em admin.html (ativar, ajustar nome, liberar paineis, vincular login).
+  3. Pra cada cliente conhecido (ativo ou pendente): filtra as linhas
+     dele dentro da planilha unica, converte em linhas e grava na tabela
+     public.fretes do Supabase (upsert por cliente_id+minuta), e registra
+     ocorrencias novas em public.ocorrencias_historico.
   4. Envia um e-mail de resumo.
 
 Credenciais do portal vem de PORTAL_USER / PORTAL_PASS (variaveis de
@@ -67,7 +68,7 @@ def log(msg):
         pass  # logging nunca deve derrubar o pipeline
 
 
-def extrair_arquivos(usuario, senha, nomes_portal, data_ini, data_fim, pasta_tmp: Path) -> dict:
+def extrair_tudo(usuario, senha, data_ini, data_fim, pasta_tmp: Path) -> Path:
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         context = browser.new_context(accept_downloads=True)
@@ -76,9 +77,7 @@ def extrair_arquivos(usuario, senha, nomes_portal, data_ini, data_fim, pasta_tmp
 
         try:
             ep.login(page, usuario, senha)
-            arquivos = {}
-            for nome in nomes_portal:
-                arquivos[nome] = ep.extrair_cliente(page, nome, data_ini, data_fim, pasta_tmp)
+            destino = ep.extrair_todos(page, data_ini, data_fim, pasta_tmp)
         except Exception:
             diag_dir = pasta_tmp / "diagnostico"
             diag_dir.mkdir(parents=True, exist_ok=True)
@@ -91,22 +90,47 @@ def extrair_arquivos(usuario, senha, nomes_portal, data_ini, data_fim, pasta_tmp
             raise
         finally:
             browser.close()
-    return arquivos
+    return destino
 
 
-def _mapear_clientes_por_portal(clientes):
-    """{nome_no_portal: cliente}, avisando (e ignorando o repetido) se
-    dois clientes ativos declararem o mesmo nome de portal -- nao deveria
-    acontecer (cadastro errado em admin.html), mas nao pode travar o
-    pipeline pros demais clientes."""
+def _chave(nome):
+    return str(nome or "").strip().lower()
+
+
+def _mapear_por_nome_portal(clientes):
+    """{nome_portal_normalizado: cliente}, avisando (e ignorando o
+    repetido) se dois clientes declararem o mesmo nome de portal -- nao
+    deveria acontecer (cadastro errado em admin.html), mas nao pode
+    travar o pipeline pros demais clientes."""
     mapa = {}
     for c in clientes:
         for nome in c.get("nomes_portal") or []:
-            if nome in mapa:
-                log(f"AVISO: nome de portal '{nome}' repetido em '{mapa[nome]['nome']}' e '{c['nome']}' -- mantendo o primeiro, confira o cadastro em admin.html.")
+            chave = _chave(nome)
+            if not chave:
                 continue
-            mapa[nome] = c
+            if chave in mapa:
+                log(f"AVISO: nome de portal '{nome}' repetido em '{mapa[chave]['nome']}' e '{c['nome']}' -- mantendo o primeiro, confira o cadastro em admin.html.")
+                continue
+            mapa[chave] = c
     return mapa
+
+
+def descobrir_clientes_novos(df, clientes_existentes):
+    """Olha a coluna CLIENTE da extracao unica e cadastra (pendente,
+    inativo) qualquer nome que nao bate com o nomes_portal de nenhum
+    cliente ja conhecido (ativo ou nao). Retorna a lista de clientes
+    atualizada (existentes + os novos recem-criados)."""
+    mapa = _mapear_por_nome_portal(clientes_existentes)
+    nomes_na_planilha = sorted(set(str(x).strip() for x in df["CLIENTE"].dropna().unique() if str(x).strip()))
+    novos = [n for n in nomes_na_planilha if _chave(n) not in mapa]
+    if not novos:
+        return clientes_existentes
+    log(f"Clientes novos descobertos na extracao (cadastrados como pendentes, inativos): {', '.join(novos)}")
+    for nome in novos:
+        cliente_novo = supabase_db.criar_cliente_pendente(nome)
+        clientes_existentes.append(cliente_novo)
+        mapa[_chave(nome)] = cliente_novo
+    return clientes_existentes
 
 
 def _valor_ou_none(v):
@@ -151,25 +175,26 @@ def _linha_para_frete(r, cliente_id):
     }
 
 
-def processar_cliente(cliente, arquivos_por_portal, pasta_consolidados, mes_abrev):
-    """Consolida os arquivos extraidos dos nomes de portal deste cliente,
-    grava os dados de frete e as ocorrencias novas no Supabase. Retorna
-    (n_linhas, n_ocorrencias_novas), ou None se nao tinha nenhum arquivo
-    extraido pra esse cliente (nenhum dos nomes_portal foi encontrado)."""
-    nomes = [n for n in (cliente.get("nomes_portal") or []) if n in arquivos_por_portal]
-    if not nomes:
-        log(f"{cliente['nome']}: nenhum arquivo extraido (confira nomes_portal em admin.html) -- pulando.")
+def processar_cliente(cliente, df_tudo, pasta_consolidados, mes_abrev):
+    """Filtra, dentro da planilha unica (todos os clientes), as linhas
+    cujo CLIENTE bate com algum nomes_portal deste cliente; grava os
+    dados de frete e as ocorrencias novas no Supabase. Retorna
+    (n_linhas, n_ocorrencias_novas), ou None se nao tinha nenhuma linha
+    pra esse cliente (nomes_portal desatualizado ou sem movimento no
+    periodo)."""
+    chaves = {_chave(n) for n in (cliente.get("nomes_portal") or [])}
+    if not chaves:
         return None
-
-    dfs = [pd.read_excel(arquivos_por_portal[n], sheet_name="Brudam") for n in nomes]
-    df = pd.concat(dfs, ignore_index=True)
+    df = df_tudo[df_tudo["CLIENTE"].astype(str).str.strip().str.lower().isin(chaves)]
+    if df.empty:
+        return None
 
     pasta_consolidados.mkdir(parents=True, exist_ok=True)
     nome_arquivo = "".join(c if c.isalnum() else "_" for c in cliente["nome"])
     df.to_excel(pasta_consolidados / f"{nome_arquivo}_Jan_{mes_abrev}.xlsx", sheet_name="Brudam", index=False)
 
     rows = ad.build_rows(df)
-    log(f"{cliente['nome']}: {len(rows)} linhas (nomes no portal: {', '.join(nomes)}).")
+    log(f"{cliente['nome']}: {len(rows)} linhas (nomes no portal: {', '.join(cliente.get('nomes_portal') or [])}).")
 
     supabase_db.upsert_fretes([_linha_para_frete(r, cliente["id"]) for r in rows])
 
@@ -211,37 +236,33 @@ def main():
         log("Defina as variaveis de ambiente PORTAL_USER e PORTAL_PASS antes de rodar.")
         sys.exit(1)
 
-    log("Buscando clientes ativos no Supabase...")
-    clientes = supabase_db.listar_clientes_ativos()
-    if not clientes:
-        log("Nenhum cliente ativo cadastrado em admin.html -- nada a fazer.")
-        return
-    mapa_portal = _mapear_clientes_por_portal(clientes)
-    if not mapa_portal:
-        log("Nenhum cliente ativo tem nomes_portal cadastrado -- nada a extrair.")
-        return
-    log(f"Clientes ativos: {', '.join(c['nome'] for c in clientes)} ({len(mapa_portal)} nomes no portal).")
-
     hoje = date.today()
     data_ini = date(hoje.year, 1, 1).strftime("%d/%m/%Y")
     data_fim = (hoje - timedelta(days=1)).strftime("%d/%m/%Y")
     log(f"Periodo: {data_ini} ate {data_fim}")
 
     pasta_tmp = REPO_DIR / "downloads_tmp"
-    arquivos = extrair_arquivos(usuario, senha, list(mapa_portal.keys()), data_ini, data_fim, pasta_tmp)
+    arquivo = extrair_tudo(usuario, senha, data_ini, data_fim, pasta_tmp)
+
+    df_tudo = pd.read_excel(arquivo, sheet_name="Brudam")
+    log(f"Extracao unica: {len(df_tudo)} linhas, {df_tudo['CLIENTE'].nunique()} clientes distintos no Brudam.")
+
+    log("Buscando clientes cadastrados no Supabase (ativos e pendentes)...")
+    clientes = supabase_db.listar_clientes_todos()
+    clientes = descobrir_clientes_novos(df_tudo, clientes)
 
     pasta_consolidados = REPO_DIR / "consolidados"
     mes_abrev = ad.MES_ABREV[hoje.month]
     resumo = []
     for cliente in clientes:
-        resultado = processar_cliente(cliente, arquivos, pasta_consolidados, mes_abrev)
+        resultado = processar_cliente(cliente, df_tudo, pasta_consolidados, mes_abrev)
         if resultado:
-            resumo.append((cliente["nome"], *resultado))
+            resumo.append((cliente["nome"], cliente.get("ativo", False), *resultado))
 
     agora = datetime.now().strftime("%d/%m/%Y %H:%M")
     itens = "".join(
-        f"<li>{nome}: {n_linhas} minutas, {n_oco} ocorrencia(s) nova(s)</li>"
-        for nome, n_linhas, n_oco in resumo
+        f"<li>{nome}{'' if ativo else ' (pendente de revisao)'}: {n_linhas} minutas, {n_oco} ocorrencia(s) nova(s)</li>"
+        for nome, ativo, n_linhas, n_oco in resumo
     )
     corpo_html = f"<p>A rotina rodou normalmente em {agora}.</p><ul>{itens}</ul>"
     enviar_email("Indicador Clientes - Atualizado com Sucesso", corpo_html)

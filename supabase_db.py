@@ -41,18 +41,33 @@ def _lotes(lista, tamanho=_LOTE):
         yield lista[i:i + tamanho]
 
 
-def listar_clientes_ativos():
-    """Todos os clientes ativos cadastrados (admin.html), com id, nome e
-    nomes_portal -- usado pelo pipeline pra saber quem extrair do Brudam
-    e pra que cliente_id gravar cada linha."""
+def listar_clientes_todos():
+    """Todos os clientes cadastrados, ativos ou nao -- usado pelo
+    pipeline pra montar o mapa nomes_portal->cliente completo (inclui
+    os ainda pendentes de revisao) antes de decidir quais nomes vindos
+    do Brudam sao realmente novos."""
     resp = requests.get(
         f"{REST_URL}/clientes",
         headers=_headers(),
-        params={"select": "id,nome,nomes_portal", "ativo": "eq.true"},
+        params={"select": "id,nome,nomes_portal,ativo"},
         timeout=30,
     )
     resp.raise_for_status()
     return resp.json()
+
+
+def criar_cliente_pendente(nome_portal):
+    """Cadastra um cliente novo, INATIVO, com um unico nome_portal --
+    descoberto automaticamente numa extracao sem filtro de cliente
+    (ver pipeline_atualizar.py). Fica pendente de revisao em
+    admin.html: o Mauro ativa, ajusta o nome de exibicao, define os
+    paineis liberados e vincula um login, quando quiser dar acesso a
+    esse cliente de verdade."""
+    headers = _headers({"Prefer": "return=representation"})
+    payload = {"nome": nome_portal, "nomes_portal": [nome_portal], "ativo": False, "paineis_permitidos": []}
+    resp = requests.post(f"{REST_URL}/clientes", headers=headers, json=payload, timeout=30)
+    resp.raise_for_status()
+    return resp.json()[0]
 
 
 def upsert_fretes(linhas):
