@@ -1,9 +1,12 @@
 name: Atualizar Indicador Clientes (manual)
 
-# COPIADO do indicador-ansell em 01/10/2026 como ponto de partida -- este
-# workflow ainda roda a logica ANTIGA (pipeline de um cliente so, grava
-# direto no index.html). Precisa ser reescrito nas etapas 4/5 do projeto
-# multi-cliente (extrair todos os clientes, gravar no Supabase).
+# Etapa 4 (01/10/2026): pipeline multi-cliente -- extrai todos os
+# clientes ativos (cadastrados em admin.html) do portal Brudam e grava
+# no Supabase (tabelas fretes/ocorrencias_historico), em vez de um
+# index.html por cliente. Variaveis de ambiente necessarias na maquina
+# do runner (self-hosted, persistentes no PC, nao em GitHub Secrets --
+# mesmo padrao do indicador-ansell): PORTAL_USER, PORTAL_PASS,
+# SUPABASE_SERVICE_ROLE_KEY, EMAIL_USER, EMAIL_PASS.
 
 on:
   workflow_dispatch:

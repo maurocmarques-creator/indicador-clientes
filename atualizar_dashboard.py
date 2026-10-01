@@ -1,71 +1,23 @@
 #!/usr/bin/env python3
 """
-atualizar_dashboard.py — Atualiza index.html do Indicador Ansell a partir de
-uma planilha consolidada (Ansell + Hercules) exportada do relatorio 106
-(Emissoes) do sistema Brudam.
+atualizar_dashboard.py — Transforma a planilha consolidada (todos os
+clientes) exportada do relatorio 106 (Emissoes) do sistema Brudam em
+linhas prontas pra gravar na tabela public.fretes do Supabase (uma por
+minuta). Chamado por pipeline_atualizar.py, um cliente por vez.
 
-Uso: python atualizar_dashboard.py <planilha.xlsx> [pasta_do_dashboard]
-Padrao pasta_do_dashboard: diretorio deste script.
+Ainda NAO inclui: correcoes manuais de status/data, observacoes do
+Mural, motivo de ocorrencia, ID de carregamento -- essas funcionalidades
+continuam especificas do projeto indicador-ansell por enquanto (ver
+supabase/PROJETO.md), migradas pra ca numa etapa futura.
 """
 
 import re
-import sys
-import json
 from datetime import datetime
-from pathlib import Path
 
 import pandas as pd
 
-from config import CONFIG
-
 MES_ABREV = {1: 'Jan', 2: 'Fev', 3: 'Mar', 4: 'Abr', 5: 'Mai', 6: 'Jun',
              7: 'Jul', 8: 'Ago', 9: 'Set', 10: 'Out', 11: 'Nov', 12: 'Dez'}
-
-# Excecoes manuais de STATUS por MINUTA, para casos onde o sistema
-# classifica errado (ex: TIPO EMISSAO = DEVOLUCAO mas a carga foi
-# entregue normalmente). Fica em cliente_config.json para persistir a
-# cada atualizacao.
-STATUS_OVERRIDES = CONFIG.get("status_overrides", {})
-
-# Correcoes manuais de datas por MINUTA, para erros de digitacao no
-# portal (ex: agendamento cadastrado com o ano errado). Fica em
-# cliente_config.json para persistir a cada atualizacao.
-DATE_OVERRIDES = CONFIG.get("date_overrides", {})
-
-# Mural de observacoes por MINUTA, mostrado na aba Em Transito logo
-# abaixo da descricao da ultima ocorrencia -- uma "conversa" (lista de
-# mensagens, mais recente por ultimo) que o time PortoEx escreve na
-# ferramenta interna (Artifact com banco compartilhado) e que este
-# pipeline sincroniza para dentro de cliente_config.json, para ficar
-# visivel (somente leitura) para quem abrir o dashboard publico,
-# inclusive o cliente. Formato por minuta:
-#   [{"autor": "Nome", "texto": "...", "data": "17/09/2026 14:30"}, ...]
-OBSERVACOES_TRANSITO = CONFIG.get("observacoes_transito", {})
-
-# Motivo da ocorrencia (ex.: "Pedido Divergente", "Nota Fiscal em
-# Desacordo-Preco Incorreto"), marcado manualmente pelo time PortoEx no
-# Mural -- um motivo por MINUTA (nao por evento/volume), cobrindo a
-# ocorrencia-problema mais recente dela. Mesmo mecanismo de sincronizacao
-# que OBSERVACOES_TRANSITO (Mural -> cliente_config.json -> aqui).
-# Formato por minuta: {"motivo": "Pedido Divergente", "definido_em": "..."}
-MOTIVOS_OCORRENCIA = CONFIG.get("motivos_ocorrencia", {})
-
-# ID de Carregamento, vinculado manualmente por NF (nao por minuta) no
-# Mural ao importar a "Ordem de Coleta" do dia -- mesmo mecanismo de
-# sincronizacao que MOTIVOS_OCORRENCIA. Chave = numero da NF (string).
-ID_CARREGAMENTO_POR_NF = CONFIG.get("id_carregamento", {})
-
-
-def _id_carregamento_da_linha(nf_doc):
-    """Uma minuta pode ter mais de uma NF na mesma celula (separadas por
-    virgula) -- usa o ID de Carregamento da primeira NF que bater no
-    mapa (na pratica todas as NFs de uma minuta viajam no mesmo
-    carregamento, entao nao deveria haver conflito real)."""
-    for nf in str(nf_doc or '').split(','):
-        nf = nf.strip()
-        if nf in ID_CARREGAMENTO_POR_NF:
-            return ID_CARREGAMENTO_POR_NF[nf]
-    return ''
 
 UF_REGIAO = {
     'AC': 'Norte', 'AP': 'Norte', 'AM': 'Norte', 'PA': 'Norte', 'RO': 'Norte', 'RR': 'Norte', 'TO': 'Norte',
@@ -281,14 +233,6 @@ def build_rows(df, hoje=None):
         prev_entrega = r['PREV. ENTREGA']
         data_agendamento = r['DATA DE AGENDAMENTO']
 
-        # Corrige erros de digitacao de data cadastrados no portal (ex:
-        # ano errado), antes de qualquer calculo usar essas datas.
-        date_over = DATE_OVERRIDES.get(minuta, {})
-        if 'DATA DE AGENDAMENTO' in date_over:
-            data_agendamento = pd.Timestamp(date_over['DATA DE AGENDAMENTO'])
-        if 'PREV. ENTREGA' in date_over:
-            prev_entrega = pd.Timestamp(date_over['PREV. ENTREGA'])
-
         tipo = r[tipo_col]
         # "Destinatario" no dashboard e sempre o cliente final (DESTINO/
         # CIDADE DESTINO/UF DESTINO -- nunca vem em branco no Brudam), nao
@@ -314,9 +258,7 @@ def build_rows(df, hoje=None):
         coord = CITY_COORD.get(f"{eff_cidade}|{eff_uf}") or UF_CENTROID.get(eff_uf)
         descricao_ultimo = r.get('DESCRICAO ULTIMO', '')
         descricao_ultimo = '' if pd.isna(descricao_ultimo) else descricao_ultimo
-        status = STATUS_OVERRIDES.get(
-            minuta, compute_status(tipo, data_entrega, prev_entrega, data_agendamento, hoje, descricao_ultimo)
-        )
+        status = compute_status(tipo, data_entrega, prev_entrega, data_agendamento, hoje, descricao_ultimo)
         prazo_perf = prazo_efetivo(prev_entrega, data_agendamento, data_emissao)
 
         rows.append({
@@ -351,9 +293,6 @@ def build_rows(df, hoje=None):
             'REDESPACHO': redespacho,
             'EFF_CIDADE': eff_cidade,
             'DESCRICAO_ULTIMO': descricao_ultimo,
-            'OBSERVACOES': OBSERVACOES_TRANSITO.get(minuta, []),
-            'MOTIVO_OCORRENCIA': MOTIVOS_OCORRENCIA.get(minuta, {}).get('motivo', ''),
-            'ID_CARREGAMENTO': _id_carregamento_da_linha(r['NF/DOC']),
             'EFF_UF': eff_uf,
             'REGIAO': UF_REGIAO.get(eff_uf, ''),
             'LAT': coord[0] if coord else None,
@@ -407,141 +346,24 @@ def build_ocorrencias_problema(rows, historico):
     return resultado
 
 
-def build_ocorrencias_historico(rows, historico_anterior):
-    """O Brudam so entrega a ultima ocorrencia de cada minuta
-    (DESCRICAO_ULTIMO, sobrescrita a cada rodada) -- sem historico
-    proprio na fonte. Essa funcao constroi o historico do lado da
-    PortoEx: compara a ocorrencia atual de cada minuta com a ultima
-    conhecida (guardada em historico_anterior) e so acrescenta um
-    registro novo quando ela mudou (ou e a primeira vez que a minuta
-    aparece com uma ocorrencia nao vazia) -- assim nao perde o registro
-    quando o Brudam atualizar/substituir a ocorrencia. Formato:
-    {"<MINUTA>": [{"descricao": "135 - MATERIAL RECUSADO PELO CLIENTE",
-    "detectado_em": "30/09/2026 15:00"}, ...]}."""
-    agora = datetime.now().strftime('%d/%m/%Y %H:%M')
-    historico = {m: list(v) for m, v in historico_anterior.items()}
+def novas_ocorrencias(rows, ultimas_conhecidas, cliente_id):
+    """Compara a ocorrencia atual (DESCRICAO_ULTIMO) de cada linha com a
+    ultima conhecida no historico (public.ocorrencias_historico, ver
+    supabase_db.ultima_ocorrencia_por_minuta) e retorna so os eventos
+    novos (descricao mudou, ou e a primeira vez que a minuta aparece com
+    uma ocorrencia nao vazia) -- prontos pra supabase_db.inserir_ocorrencias."""
+    agora = datetime.now().isoformat()
+    novas = []
     for r in rows:
         desc = r['DESCRICAO_ULTIMO']
         if not desc:
             continue
         minuta = r['MINUTA']
-        anteriores = historico.get(minuta, [])
-        if not anteriores or anteriores[-1]['descricao'] != desc:
-            historico[minuta] = anteriores + [{'descricao': desc, 'detectado_em': agora}]
-    return historico
-
-
-def build_raw(rows, gerado_em=None):
-    meses = sorted(set(r['MES'] for r in rows))
-    tipos = sorted(set(r['TIPO EMISSÃO'] for r in rows))
-    ufs = sorted(set(r['EFF_UF'] for r in rows if r['EFF_UF']))
-    clientes = sorted(set(r['CLIENTE'] for r in rows))
-    return {
-        'meta': {
-            'meses': meses,
-            'tipos_emissao': tipos,
-            'ufs': ufs,
-            'clientes': clientes,
-            'gerado_em': gerado_em or datetime.now().strftime('%d/%m/%Y %H:%M'),
-        },
-        'rows': rows,
-    }
-
-
-def read_json_blob(content, marker):
-    pos = content.find(marker)
-    if pos == -1:
-        return None
-    start = pos + len(marker)
-    decoder = json.JSONDecoder()
-    data, _ = decoder.raw_decode(content, start)
-    return data
-
-
-def replace_json_blob(content, marker, new_json):
-    pos = content.find(marker)
-    if pos == -1:
-        raise ValueError(f'Marcador nao encontrado: {marker!r}')
-    start = pos + len(marker)
-    decoder = json.JSONDecoder()
-    _, end = decoder.raw_decode(content, start)
-    return content[:start] + new_json + content[end:]
-
-
-def main():
-    if len(sys.argv) < 2:
-        print('Uso: python atualizar_dashboard.py <planilha.xlsx> [pasta_do_dashboard]')
-        sys.exit(1)
-
-    xlsx_path = Path(sys.argv[1])
-    dash_dir = Path(sys.argv[2]) if len(sys.argv) > 2 else Path(__file__).parent
-    index_path = dash_dir / 'index.html'
-
-    if not xlsx_path.exists():
-        print(f'Planilha nao encontrada: {xlsx_path}')
-        sys.exit(1)
-
-    print(f'Lendo {xlsx_path}...')
-    df = pd.read_excel(xlsx_path, sheet_name='Brudam')
-    print(f'{len(df)} linhas carregadas.')
-
-    rows = build_rows(df)
-    raw = build_raw(rows)
-
-    print(f"Periodo: {raw['meta']['meses'][0]} a {raw['meta']['meses'][-1]}")
-    print(f"Clientes: {raw['meta']['clientes']}")
-    print(f"Linhas RAW: {len(rows)}")
-
-    index_content = index_path.read_text(encoding='utf-8')
-    raw_json = json.dumps(raw, ensure_ascii=False)
-    index_content = replace_json_blob(index_content, 'const RAW = ', raw_json)
-
-    # Historico de ocorrencias (ver build_ocorrencias_historico) -- guardado
-    # tambem solto no repo (nao so no blob do index.html) pra sobreviver
-    # mesmo se o blob for reconstruido do zero num passo futuro.
-    hist_path = dash_dir / 'ocorrencias_historico.json'
-    historico_anterior = json.loads(hist_path.read_text(encoding='utf-8')) if hist_path.exists() else {}
-    historico = build_ocorrencias_historico(rows, historico_anterior)
-    hist_path.write_text(json.dumps(historico, ensure_ascii=False), encoding='utf-8')
-    index_content = replace_json_blob(index_content, 'const OCORRENCIAS_HIST = ', json.dumps(historico, ensure_ascii=False))
-    print(f'Atualizado: {hist_path} ({sum(len(v) for v in historico.values())} eventos em {len(historico)} minutas)')
-
-    index_path.write_text(index_content, encoding='utf-8')
-    print(f'Atualizado: {index_path}')
-
-    # ocorrencias_problema.json -- minutas que ja tiveram ocorrencia-problema
-    # (mesmo que ja resolvida), publicada solta no repo pro Mural buscar e
-    # o time marcar o motivo -- mesmo padrao do em_transito.json, mas sem
-    # se limitar as minutas ainda em transito.
-    ocorrencias_problema = build_ocorrencias_problema(rows, historico)
-    ocorrencias_problema_path = dash_dir / 'ocorrencias_problema.json'
-    ocorrencias_problema_path.write_text(json.dumps(ocorrencias_problema, ensure_ascii=False), encoding='utf-8')
-    print(f'Atualizado: {ocorrencias_problema_path} ({len(ocorrencias_problema)} minutas)')
-
-    # em_transito.json -- lista das minutas ainda em transito (mesmo
-    # criterio da aba "Em Transito" do dashboard), publicada solta no
-    # repo pra o Mural buscar ao vivo (fetch direto do GitHub, sem
-    # precisar que eu republique o Mural toda vez que uma minuta e
-    # entregue e sai da lista).
-    em_transito = [
-        {
-            'minuta': r['MINUTA'],
-            'nf': r['NF_DOC'],
-            'cliente': r['CLIENTE'],
-            'destinatario': r['EFF_LOCAL'],
-            'cidade': r['EFF_CIDADE'],
-            'uf': r['EFF_UF'],
-            'redespacho': r['REDESPACHO'],
-            'prazo': r['DATA DE AGENDAMENTO'] or r['PREV. ENTREGA'],
-            'descricao': r['DESCRICAO_ULTIMO'],
-        }
-        for r in rows
-        if r['STATUS'] in ('EM TRANSITO DENTRO DO PRAZO', 'EM TRANSITO FORA DO PRAZO')
-    ]
-    em_transito_path = dash_dir / 'em_transito.json'
-    em_transito_path.write_text(json.dumps(em_transito, ensure_ascii=False), encoding='utf-8')
-    print(f'Atualizado: {em_transito_path} ({len(em_transito)} minutas em transito)')
-
-
-if __name__ == '__main__':
-    main()
+        if ultimas_conhecidas.get(minuta) != desc:
+            novas.append({
+                'cliente_id': cliente_id,
+                'minuta': minuta,
+                'descricao': desc,
+                'detectado_em': agora,
+            })
+    return novas

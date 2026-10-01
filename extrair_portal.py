@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """
 extrair_portal.py — Automatiza a extracao do relatorio 106 (Emissoes) do
-portal Brudam (azportoex.brudam.com.br) para os clientes Ansell e Hercules.
+portal Brudam (azportoex.brudam.com.br), um cliente por vez (a lista de
+clientes a extrair vem de fora -- ver pipeline_atualizar.py, que busca
+os clientes ativos no Supabase).
 
 Repete, via navegador headless, exatamente o fluxo manual:
   login -> Operacional > Relatorios > 106 Emissoes
@@ -13,10 +15,10 @@ Credenciais NUNCA ficam no codigo: vem das variaveis de ambiente
 PORTAL_USER e PORTAL_PASS (defina antes de rodar, ou configure como
 Secrets do GitHub quando isso for automatizado na nuvem).
 
-Uso:
+Uso (extracao manual de teste, um ou mais nomes do portal):
   set PORTAL_USER=seu.usuario
   set PORTAL_PASS=sua.senha
-  python extrair_portal.py [pasta_de_saida]
+  python extrair_portal.py <pasta_de_saida> <Cliente1> [Cliente2 ...]
 """
 
 import os
@@ -26,12 +28,13 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
-from config import CONFIG
-
 PORTAL_URL = "https://azportoex.brudam.com.br/"
 RELATORIO_URL = "https://azportoex.brudam.com.br/opr/relatorio/emissoes"
-RELATORIO_PERSONALIZADO = CONFIG["template_relatorio"]
-CLIENTES = CONFIG["clientes_portal"]
+# Nome do relatorio personalizado salvo em "Meus relatorios" no Brudam --
+# define so o layout/colunas do Excel exportado (generico, nao filtrado
+# por cliente -- o filtro de cliente e o campo de busca da pagina), entao
+# o mesmo template serve pra extrair qualquer cliente.
+RELATORIO_PERSONALIZADO = "AUDITORIA TELA 106_ANSELL"
 
 
 def log(msg):
@@ -139,7 +142,11 @@ def main():
         log("Defina as variaveis de ambiente PORTAL_USER e PORTAL_PASS antes de rodar.")
         sys.exit(1)
 
-    pasta_saida = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).parent / "downloads_tmp"
+    if len(sys.argv) < 3:
+        log("Uso: python extrair_portal.py <pasta_de_saida> <Cliente1> [Cliente2 ...]")
+        sys.exit(1)
+    pasta_saida = Path(sys.argv[1])
+    clientes = sys.argv[2:]
 
     hoje = date.today()
     data_ini = date(hoje.year, 1, 1).strftime("%d/%m/%Y")
@@ -155,7 +162,7 @@ def main():
         login(page, usuario, senha)
 
         arquivos = {}
-        for cliente in CLIENTES:
+        for cliente in clientes:
             arquivos[cliente] = extrair_cliente(page, cliente, data_ini, data_fim, pasta_saida)
 
         browser.close()
