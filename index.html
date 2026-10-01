@@ -1013,24 +1013,60 @@ async function carregarDadosSupabase() {
   recalcularDerivadosDeRAW();
 }
 
+// Campo de busca (em vez de uma lista suspensa comum) pro admin achar
+// um cliente rapido mesmo com muitos cadastrados -- digita, filtra por
+// substring no nome, clica na sugestao.
 function montarSeletorClienteAdmin(clienteIdAtual) {
   const el = document.getElementById('user-info');
-  if (!el || document.getElementById('sel-cliente-admin')) return;
-  const sel = document.createElement('select');
-  sel.id = 'sel-cliente-admin';
-  sel.style.cssText = 'border-radius:6px;padding:4px 8px;font-size:.76rem;color:#1e293b';
-  CLIENTES_ADMIN.forEach(c => {
-    const o = document.createElement('option');
-    o.value = c.id; o.text = c.nome; o.selected = c.id === clienteIdAtual;
-    sel.add(o);
-  });
-  sel.addEventListener('change', async () => {
-    localStorage.setItem('indicadorClientes.clienteAdmin', sel.value);
+  if (!el || document.getElementById('busca-cliente-admin-wrap')) return;
+
+  const atual = CLIENTES_ADMIN.find(c => c.id === clienteIdAtual);
+
+  const wrap = document.createElement('div');
+  wrap.id = 'busca-cliente-admin-wrap';
+  wrap.style.cssText = 'position:relative';
+
+  const input = document.createElement('input');
+  input.id = 'busca-cliente-admin';
+  input.type = 'text';
+  input.autocomplete = 'off';
+  input.placeholder = 'Buscar cliente...';
+  input.value = atual ? atual.nome : '';
+  input.style.cssText = 'border:1px solid #cbd5e1;border-radius:6px;padding:4px 8px;font-size:.76rem;color:#1e293b;width:170px';
+
+  const lista = document.createElement('div');
+  lista.id = 'lista-cliente-admin';
+  lista.style.cssText = 'display:none;position:absolute;top:100%;left:0;z-index:60;background:#fff;border:1px solid #cbd5e1;border-radius:6px;margin-top:3px;width:220px;max-height:220px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,.15)';
+
+  function renderLista(filtro) {
+    const termo = (filtro || '').trim().toLowerCase();
+    const encontrados = CLIENTES_ADMIN.filter(c => c.nome.toLowerCase().includes(termo));
+    lista.innerHTML = encontrados.length
+      ? encontrados.map(c => `<div class="item-cliente-admin" data-id="${c.id}" style="padding:7px 10px;font-size:.8rem;color:#1e293b;cursor:pointer">${c.nome}</div>`).join('')
+      : '<div style="padding:7px 10px;font-size:.8rem;color:#94a3b8">Nenhum cliente encontrado</div>';
+    lista.style.display = 'block';
+  }
+
+  input.addEventListener('focus', () => renderLista(input.value === (atual && atual.nome) ? '' : input.value));
+  input.addEventListener('input', () => renderLista(input.value));
+  input.addEventListener('blur', () => setTimeout(() => { lista.style.display = 'none'; }, 150));
+
+  lista.addEventListener('mousedown', async (e) => {
+    const item = e.target.closest('.item-cliente-admin');
+    if (!item) return;
+    const c = CLIENTES_ADMIN.find(c => c.id === item.dataset.id);
+    if (!c) return;
+    input.value = c.nome;
+    lista.style.display = 'none';
+    localStorage.setItem('indicadorClientes.clienteAdmin', c.id);
     await carregarDadosSupabase();
     popularFiltrosEBadge();
     applyFilters();
   });
-  el.insertBefore(sel, el.firstChild);
+
+  wrap.appendChild(input);
+  wrap.appendChild(lista);
+  el.insertBefore(wrap, el.firstChild);
 }
 
 function montarUserInfo(perfil) {
