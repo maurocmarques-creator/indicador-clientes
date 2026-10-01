@@ -12,7 +12,7 @@ supabase/PROJETO.md), migradas pra ca numa etapa futura.
 """
 
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pandas as pd
 
@@ -351,8 +351,11 @@ def novas_ocorrencias(rows, ultimas_conhecidas, cliente_id):
     ultima conhecida no historico (public.ocorrencias_historico, ver
     supabase_db.ultima_ocorrencia_por_minuta) e retorna so os eventos
     novos (descricao mudou, ou e a primeira vez que a minuta aparece com
-    uma ocorrencia nao vazia) -- prontos pra supabase_db.inserir_ocorrencias."""
-    agora = datetime.now().isoformat()
+    uma ocorrencia nao vazia) -- prontos pra supabase_db.inserir_ocorrencias.
+    'detectado_em' em UTC explicito (coluna timestamptz) -- datetime.now()
+    sem timezone seria hora local do Brasil gravada como se fosse UTC,
+    adiantando a exibicao em 3h."""
+    agora = datetime.now(timezone.utc).isoformat()
     novas = []
     for r in rows:
         desc = r['DESCRICAO_ULTIMO']
