@@ -104,6 +104,7 @@
           <select id="v-role" style="width:100%;border:1px solid var(--border);border-radius:7px;padding:8px 10px;font-size:.86rem;margin-bottom:12px">
             <option value="cliente">Cliente</option>
             <option value="admin">Admin (PortoEx)</option>
+            <option value="comercial_leitura">Comercial (somente leitura)</option>
           </select>
         </div>
         <div id="v-cliente-wrap">
@@ -194,7 +195,7 @@ async function carregarProfiles() {
   tbody.innerHTML = (data || []).map(p => `
     <tr>
       <td>${p.nome}</td>
-      <td>${p.role === 'admin' ? 'Admin' : 'Cliente'}</td>
+      <td>${p.role === 'admin' ? 'Admin' : p.role === 'comercial_leitura' ? 'Comercial (leitura)' : 'Cliente'}</td>
       <td>${p.clientes ? p.clientes.nome : '—'}</td>
     </tr>
   `).join('') || '<tr><td colspan="3" style="color:var(--gray)">Nenhum login vinculado ainda.</td></tr>';
@@ -250,7 +251,7 @@ document.getElementById('form-cliente').addEventListener('submit', async (e) => 
 });
 
 document.getElementById('v-role').addEventListener('change', (e) => {
-  document.getElementById('v-cliente-wrap').style.display = e.target.value === 'admin' ? 'none' : 'block';
+  document.getElementById('v-cliente-wrap').style.display = e.target.value === 'cliente' ? 'block' : 'none';
 });
 
 document.getElementById('form-vinculo').addEventListener('submit', async (e) => {
@@ -258,7 +259,7 @@ document.getElementById('form-vinculo').addEventListener('submit', async (e) => 
   const email = document.getElementById('v-email').value.trim();
   const nome = document.getElementById('v-nome').value.trim();
   const role = document.getElementById('v-role').value;
-  const clienteId = role === 'admin' ? null : document.getElementById('v-cliente').value;
+  const clienteId = role === 'cliente' ? document.getElementById('v-cliente').value : null;
 
   // auth.users nao e acessivel via RLS direto do client; o id do usuario
   // vem de uma RPC dedicada (buscar_auth_user_id, schema_etapa3.sql).

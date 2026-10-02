@@ -47,6 +47,14 @@ window.authPronto = (async function iniciarAuth() {
     return null;
   }
 
+  if (profile.role !== 'admin' && profile.role !== 'cliente') {
+    // Outros papeis (ex.: comercial_leitura, usado so na pagina Comercial do
+    // indicador-ansell) nao tem acesso a este sistema.
+    await supabaseClient.auth.signOut();
+    location.href = 'login.html?erro=sem_acesso';
+    return null;
+  }
+
   if (profile.role === 'cliente' && (!profile.clientes || !profile.clientes.ativo)) {
     // Cliente desativado (ou sem vinculo) -- barra o acesso mesmo com
     // login valido.
