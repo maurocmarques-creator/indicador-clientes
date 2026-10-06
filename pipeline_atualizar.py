@@ -53,6 +53,7 @@ REPO_DIR = Path(__file__).parent
 SMTP_HOST = "smtp.gmail.com"
 SMTP_PORT = 587
 EMAIL_DESTINO = "mauro.cesar@portoex.com.br"
+PREFIXO_MINUTA_PEX = "PEX-"
 
 LOG_FILE = REPO_DIR / "pipeline.log"
 LOCK_FILE = REPO_DIR / "pipeline.lock"
@@ -68,7 +69,7 @@ def log(msg):
         pass  # logging nunca deve derrubar o pipeline
 
 
-def extrair_tudo(usuario, senha, data_ini, data_fim, pasta_tmp: Path) -> Path:
+def extrair_tudo(usuario, senha, data_ini, data_fim, pasta_tmp: Path, base_url=ep.PORTAL_URL, nome_arquivo="todos.xlsx") -> Path:
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         context = browser.new_context(accept_downloads=True)
@@ -76,10 +77,10 @@ def extrair_tudo(usuario, senha, data_ini, data_fim, pasta_tmp: Path) -> Path:
         page.set_default_timeout(60000)
 
         try:
-            ep.login(page, usuario, senha)
-            destino = ep.extrair_todos(page, data_ini, data_fim, pasta_tmp)
+            ep.login(page, usuario, senha, base_url)
+            destino = ep.extrair_todos(page, data_ini, data_fim, pasta_tmp, base_url, nome_arquivo)
         except Exception:
-            diag_dir = pasta_tmp / "diagnostico"
+            diag_dir = pasta_tmp / "diagnostico" / nome_arquivo.replace(".xlsx", "")
             diag_dir.mkdir(parents=True, exist_ok=True)
             try:
                 page.screenshot(path=str(diag_dir / "falha.png"), full_page=True)
@@ -245,7 +246,30 @@ def main():
     arquivo = extrair_tudo(usuario, senha, data_ini, data_fim, pasta_tmp)
 
     df_tudo = pd.read_excel(arquivo, sheet_name="Brudam")
-    log(f"Extracao unica: {len(df_tudo)} linhas, {df_tudo['CLIENTE'].nunique()} clientes distintos no Brudam.")
+    log(f"Base AZ: {len(df_tudo)} linhas, {df_tudo['CLIENTE'].nunique()} clientes distintos no Brudam.")
+
+    # Segunda base (PEX Logistica), consolidada junto com a AZ. Login proprio
+    # (PORTAL_PEX_USER / PORTAL_PEX_PASS): o da AZ nao vale la. Se falhar, segue
+    # so com a AZ (dados da PEX ficam como estavam no Supabase) e avisa no e-mail.
+    aviso_pex = None
+    usuario_pex = os.environ.get("PORTAL_PEX_USER")
+    senha_pex = os.environ.get("PORTAL_PEX_PASS")
+    if not usuario_pex or not senha_pex:
+        aviso_pex = "PORTAL_PEX_USER/PORTAL_PEX_PASS nao definidos -- base PEX Logistica NAO foi extraida."
+        log("AVISO: " + aviso_pex)
+    else:
+        try:
+            arquivo_pex = extrair_tudo(usuario_pex, senha_pex, data_ini, data_fim, pasta_tmp, ep.PORTAL_URL_PEX, "todos_pex.xlsx")
+            df_pex = pd.read_excel(arquivo_pex, sheet_name="Brudam")
+            log(f"Base PEX: {len(df_pex)} linhas, {df_pex['CLIENTE'].nunique()} clientes distintos no Brudam.")
+            # numeracao de minuta e separada por base: o prefixo evita colisao
+            # (chave unica cliente+minuta) e mostra de onde veio a emissao.
+            df_pex["MINUTA"] = PREFIXO_MINUTA_PEX + df_pex["MINUTA"].astype(str)
+            df_tudo = pd.concat([df_tudo, df_pex], ignore_index=True)
+        except Exception as e:
+            aviso_pex = f"Falha ao extrair a base PEX Logistica ({e}) -- rodou so com a AZ."
+            log("AVISO: " + aviso_pex)
+    log(f"Consolidado: {len(df_tudo)} linhas, {df_tudo['CLIENTE'].nunique()} clientes distintos.")
 
     log("Buscando clientes cadastrados no Supabase (ativos e pendentes)...")
     clientes = supabase_db.listar_clientes_todos()
@@ -264,8 +288,11 @@ def main():
         f"<li>{nome}{'' if ativo else ' (pendente de revisao)'}: {n_linhas} minutas, {n_oco} ocorrencia(s) nova(s)</li>"
         for nome, ativo, n_linhas, n_oco in resumo
     )
-    corpo_html = f"<p>A rotina rodou normalmente em {agora}.</p><ul>{itens}</ul>"
-    enviar_email("Indicador Clientes - Atualizado com Sucesso", corpo_html)
+    corpo_html = f"<p>A rotina rodou normalmente em {agora}.</p>"
+    if aviso_pex:
+        corpo_html += f"<p><b>Atencao:</b> {aviso_pex}</p>"
+    corpo_html += f"<ul>{itens}</ul>"
+    enviar_email("Indicador Clientes - Atualizado com Sucesso" + (" (sem a base PEX)" if aviso_pex else ""), corpo_html)
 
     log("\nPipeline concluido.")
 

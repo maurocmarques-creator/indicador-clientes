@@ -30,8 +30,12 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
+# Duas bases Brudam da PortoEx: a AZ (principal) e a PEX Logistica. O
+# pipeline extrai das duas e consolida (ver pipeline_atualizar.py).
 PORTAL_URL = "https://azportoex.brudam.com.br/"
-RELATORIO_URL = "https://azportoex.brudam.com.br/opr/relatorio/emissoes"
+PORTAL_URL_PEX = "https://pexlogistica.brudam.com.br/"
+CAMINHO_RELATORIO = "opr/relatorio/emissoes"
+RELATORIO_URL = PORTAL_URL + CAMINHO_RELATORIO
 # Nome do relatorio personalizado salvo em "Meus relatorios" no Brudam --
 # define so o layout/colunas do Excel exportado (generico, nao filtrado
 # por cliente -- o filtro de cliente e o campo de busca da pagina), entao
@@ -43,9 +47,9 @@ def log(msg):
     print(msg, flush=True)
 
 
-def login(page, usuario, senha):
-    log(f"Acessando {PORTAL_URL} ...")
-    page.goto(PORTAL_URL)
+def login(page, usuario, senha, base_url=PORTAL_URL):
+    log(f"Acessando {base_url} ...")
+    page.goto(base_url)
     page.get_by_placeholder("Usuário").fill(usuario)
     page.get_by_placeholder("Senha").fill(senha)
     page.get_by_text("Acessar Sistema").click()
@@ -53,6 +57,10 @@ def login(page, usuario, senha):
     if "inicio.php" not in page.url and "opr" not in page.url:
         # confere que nao ficou na tela de login (credenciais invalidas etc.)
         page.wait_for_timeout(1500)
+    # login recusado: o portal devolve a tela de login (index.php?acao=expirada
+    # ou a propria raiz com o campo Usuario ainda na tela)
+    if page.get_by_placeholder("Usuário").count() > 0:
+        raise RuntimeError(f"Login recusado em {base_url} -- confira usuario/senha dessa base.")
     log(f"Login OK, URL atual: {page.url}")
 
 
@@ -64,13 +72,13 @@ def set_date_range(page, data_ini, data_fim):
     page.keyboard.press("Escape")
 
 
-def extrair_todos(page, data_ini, data_fim, pasta_saida: Path) -> Path:
+def extrair_todos(page, data_ini, data_fim, pasta_saida: Path, base_url=PORTAL_URL, nome_arquivo="todos.xlsx") -> Path:
     """Extrai o relatorio inteiro, sem preencher o filtro 'Cliente' --
     traz todos os clientes do Brudam de uma vez (cada linha com a
     coluna CLIENTE preenchida), em vez de uma extracao por nome de
     portal."""
     log("\n=== Extraindo TODOS os clientes ===")
-    page.goto(RELATORIO_URL)
+    page.goto(base_url + CAMINHO_RELATORIO)
     page.wait_for_load_state("networkidle")
 
     set_date_range(page, data_ini, data_fim)
@@ -91,7 +99,7 @@ def extrair_todos(page, data_ini, data_fim, pasta_saida: Path) -> Path:
     page.get_by_role("radio", name=RELATORIO_PERSONALIZADO).check()
 
     pasta_saida.mkdir(parents=True, exist_ok=True)
-    destino = pasta_saida / "todos.xlsx"
+    destino = pasta_saida / nome_arquivo
 
     log("Clicando em Gerar (isso já gera o Excel correto)...")
     with page.expect_download(timeout=180000) as download_info:
