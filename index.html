@@ -555,6 +555,10 @@ tr:last-child td{border-bottom:none}
         <label style="font-size:.75rem;color:var(--gray);font-weight:600">Mês <span style="font-weight:400">(Recebimento)</span></label>
         <select id="pn-f-mes" onchange="renderPosicaoNF()" style="border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:.8rem;color:#1e293b;background:#fff;cursor:pointer"><option value="">Todos</option></select>
       </div>
+      <div style="display:flex;flex-direction:column;gap:3px">
+        <label style="font-size:.75rem;color:var(--gray);font-weight:600">Mês <span style="font-weight:400">(Previsão de Entrega)</span></label>
+        <select id="pn-f-mesprev" onchange="renderPosicaoNF()" style="border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:.8rem;color:#1e293b;background:#fff;cursor:pointer"><option value="">Todos</option></select>
+      </div>
       <div style="display:flex;flex-direction:column;gap:3px;flex:1;min-width:220px">
         <label style="font-size:.75rem;color:var(--gray);font-weight:600">Buscar</label>
         <input id="pn-f-busca" type="text" placeholder="Minuta, CT-e ou NF..." oninput="renderPosicaoNF()" style="border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:.8rem;width:100%;box-sizing:border-box">
@@ -1104,7 +1108,7 @@ async function carregarDadosSupabase() {
 // de NF_STATUS; quando o admin troca os clientes selecionados elas precisam
 // voltar so pra "Todos" pra serem remontadas com os dados novos.
 function _resetFiltrosNF() {
-  ['nf-f-cliente', 'nf-f-mes', 'pn-f-cliente', 'pn-f-mes', 'pn-f-situacao'].forEach(id => {
+  ['nf-f-cliente', 'nf-f-mes', 'pn-f-cliente', 'pn-f-mes', 'pn-f-mesprev', 'pn-f-situacao'].forEach(id => {
     const s = document.getElementById(id);
     if (s) { while (s.options.length > 1) s.remove(1); s.value = ''; }
   });
@@ -2810,6 +2814,15 @@ function renderPosicaoNF() {
       fMes.add(o);
     });
   }
+  const fMesPrev = document.getElementById('pn-f-mesprev');
+  if (fMesPrev.options.length <= 1) {
+    const ABREV = {'01':'Jan','02':'Fev','03':'Mar','04':'Abr','05':'Mai','06':'Jun','07':'Jul','08':'Ago','09':'Set','10':'Out','11':'Nov','12':'Dez'};
+    [...new Set(todas.map(r=>(r.previsao||'').slice(0,7)).filter(Boolean))].sort().forEach(m => {
+      const o = document.createElement('option'); const [y,mm] = m.split('-');
+      o.value = m; o.text = (ABREV[mm]||mm)+'/'+y; fMesPrev.add(o);
+    });
+    if (todas.some(r => !r.previsao)) { const o = document.createElement('option'); o.value = '__sem__'; o.text = '(sem previsão)'; fMesPrev.add(o); }
+  }
   const fSit = document.getElementById('pn-f-situacao');
   if (fSit.options.length <= 1) {
     const sits = [...new Set(todas.map(r=>r.situacao).filter(Boolean))].sort();
@@ -2819,6 +2832,7 @@ function renderPosicaoNF() {
   const cliente = fCliente.value;
   const status = document.getElementById('pn-f-status').value;
   const situacao = fSit.value;
+  const mesPrev = fMesPrev.value;
   const mes = fMes.value;
   const fIdc = document.getElementById('pn-f-idc').value;
   const busca = document.getElementById('pn-f-busca').value.trim().toLowerCase();
@@ -2827,7 +2841,9 @@ function renderPosicaoNF() {
     (!cliente || r.cliente === cliente) &&
     (!mes || (r.data_recebimento||'').startsWith(mes)) &&
     (!status || r.coletada === status) &&
-    (!situacao || (situacao === '__sem__' ? !r.situacao : r.situacao === situacao))
+    (!situacao || (situacao === '__sem__' ? !r.situacao : r.situacao === situacao)) &&
+    // previsao de entrega = data do agendamento quando houver, senao a previsao do portal
+    (!mesPrev || (mesPrev === '__sem__' ? !r.previsao : (r.previsao||'').startsWith(mesPrev)))
   );
   if (fIdc==='com') filtradas = filtradas.filter(r => r.id_carregamento);
   else if (fIdc==='sem') filtradas = filtradas.filter(r => !r.id_carregamento);
