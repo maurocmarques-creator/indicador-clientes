@@ -7,3 +7,4 @@ pipeline.lock
 run_output.log
 sync_nf_status.log
 sync_nf_status.estado
+run_output.log
