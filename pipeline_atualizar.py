@@ -34,6 +34,7 @@ Uso:
   python pipeline_atualizar.py
 """
 
+import json
 import os
 import smtplib
 import sys
@@ -93,6 +94,16 @@ def extrair_tudo(usuario, senha, data_ini, data_fim, pasta_tmp: Path, base_url=e
         finally:
             browser.close()
     return destino
+
+
+def carregar_minutas_ignoradas():
+    """{(cliente_minusculo, minuta)} de minutas_ignoradas.json: minutas que
+    nao devem aparecer em painel nenhum (o pipeline as descarta)."""
+    arq = REPO_DIR / "minutas_ignoradas.json"
+    if not arq.exists():
+        return set()
+    dados = json.loads(arq.read_text(encoding="utf-8"))
+    return {(_chave(cli), str(m)) for cli, lista in dados.items() if not cli.startswith("_") for m in lista}
 
 
 def _chave(nome):
@@ -223,7 +234,7 @@ def atualizar_nfs(clientes, usuario, senha, usuario_pex, senha_pex, data_ini, da
         try:
             arq = extrair_tudo(u, s, data_ini, data_fim, pasta_tmp, url, f"nfs_{chave}.xlsx", ep.extrair_nfs_todos)
             df = pd.read_excel(arq)
-            itens = nf_status.preparar(df, prefixo)
+            itens = nf_status.preparar(df, prefixo, carregar_minutas_ignoradas())
             log(f"NFs {chave.upper()}: {len(df)} linhas no relatorio, {len(itens)} notas apos as regras.")
             itens_por_base[chave] = itens
         except Exception as e:
@@ -300,6 +311,11 @@ def main():
         except Exception as e:
             aviso_pex = f"Falha ao extrair a base PEX Logistica ({e}) -- rodou so com a AZ."
             log("AVISO: " + aviso_pex)
+    ignoradas = carregar_minutas_ignoradas()
+    if ignoradas:
+        ign = df_tudo.apply(lambda r: (_chave(r["CLIENTE"]), str(r["MINUTA"])) in ignoradas, axis=1)
+        log(f"Minutas ignoradas (minutas_ignoradas.json): {int(ign.sum())} linha(s) descartada(s).")
+        df_tudo = df_tudo[~ign].reset_index(drop=True)
     log(f"Consolidado: {len(df_tudo)} linhas, {df_tudo['CLIENTE'].nunique()} clientes distintos.")
 
     log("Buscando clientes cadastrados no Supabase (ativos e pendentes)...")

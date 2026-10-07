@@ -123,11 +123,14 @@ def ids_carregamento_do_ansell():
     return {(_chave(i["cliente"]), str(i["nf"])): i["id_carregamento"] for i in itens if i.get("id_carregamento")}
 
 
-def preparar(df, prefixo_minuta=""):
+def preparar(df, prefixo_minuta="", ignoradas=None):
     """Relatorio bruto de NFs de uma base -> lista de dicts (um por NF, com
     'historico' quando houver), ainda sem cliente_id."""
     df = df.fillna("").copy()
     df["MINUTA"] = prefixo_minuta + df["MINUTA"].astype(str)
+    if ignoradas:
+        ign = df.apply(lambda r: (_chave(r["CLIENTE"]), str(r["MINUTA"])) in ignoradas, axis=1)
+        df = df[~ign]
     df = df[df["NF/DOC"].astype(str).str.strip() != ""]
     if df.empty:
         return []
