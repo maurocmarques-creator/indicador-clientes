@@ -1,4 +1,15 @@
 {
-  "_comentario": "Minutas que NAO devem aparecer em nenhum painel (fretes, ocorrencias, Status Nota Fiscal). Chave = nome do cliente no portal; valor = lista de minutas (as da base PEX levam o prefixo PEX-). O pipeline descarta essas linhas em toda rodada.",
-  "AC COMERCIAL IMPORTADORA E EXPORTADORA LTDA": ["PEX-3061", "PEX-3062"]
+  "_comentario": "Minutas que NAO devem aparecer em nenhum painel (fretes, ocorrencias, Status Nota Fiscal). 'minutas': chave = nome do cliente no portal; valor = lista (as da base PEX levam o prefixo PEX-). 'sem_cancelados': clientes cujas minutas com CT-e Cancelado tambem sao descartadas, sempre (a lista de canceladas e descoberta a cada rodada). O pipeline aplica isso em toda rodada.",
+  "minutas": {
+    "AC COMERCIAL IMPORTADORA E EXPORTADORA LTDA": [
+      "PEX-3061",
+      "PEX-3062",
+      "267807",
+      "267809",
+      "303409"
+    ]
+  },
+  "sem_cancelados": [
+    "AC COMERCIAL IMPORTADORA E EXPORTADORA LTDA"
+  ]
 }

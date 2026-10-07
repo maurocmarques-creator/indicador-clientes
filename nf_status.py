@@ -226,3 +226,23 @@ def gravar(itens_por_base, clientes, inicio_iso, log):
     if sem_cliente:
         log(f"AVISO: NFs ignoradas (cliente nao cadastrado): {', '.join(sorted(map(str, sem_cliente))[:10])}")
     return total
+
+
+def apagar_minutas(minutas_por_cliente, clientes, log):
+    """Apaga de fretes, ocorrencias_historico e nf_status as minutas descartadas
+    pela regra 'sem_cancelados' (o pipeline ja gravou os fretes delas antes de
+    descobrir que o CT-e esta cancelado). {cliente_minusculo: {minutas}}"""
+    mapa = {}
+    for c in clientes:
+        for nome in c.get("nomes_portal") or []:
+            mapa.setdefault(_chave(nome), c)
+    for cli, minutas in minutas_por_cliente.items():
+        c = mapa.get(cli)
+        if not c or not minutas:
+            continue
+        lista = "(" + ",".join(sorted(minutas)) + ")"
+        for tabela in ("fretes", "ocorrencias_historico", "nf_status"):
+            r = requests.delete(f"{db.REST_URL}/{tabela}", headers=db._headers({"Prefer": "return=representation"}),
+                                params={"cliente_id": f"eq.{c['id']}", "minuta": f"in.{lista}"}, timeout=120)
+            r.raise_for_status()
+            log(f"Minutas canceladas de {c['nome']}: {len(r.json())} linha(s) removida(s) de {tabela}.")

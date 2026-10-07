@@ -103,7 +103,15 @@ def carregar_minutas_ignoradas():
     if not arq.exists():
         return set()
     dados = json.loads(arq.read_text(encoding="utf-8"))
-    return {(_chave(cli), str(m)) for cli, lista in dados.items() if not cli.startswith("_") for m in lista}
+    return {(_chave(cli), str(m)) for cli, lista in dados.get("minutas", {}).items() for m in lista}
+
+
+def carregar_clientes_sem_cancelados():
+    """Clientes (minusculo) cujas minutas com CT-e Cancelado sao descartadas."""
+    arq = REPO_DIR / "minutas_ignoradas.json"
+    if not arq.exists():
+        return set()
+    return {_chave(c) for c in json.loads(arq.read_text(encoding="utf-8")).get("sem_cancelados", [])}
 
 
 def _chave(nome):
@@ -227,6 +235,7 @@ def atualizar_nfs(clientes, usuario, senha, usuario_pex, senha_pex, data_ini, da
     avisos = []
     inicio = datetime.now(timezone.utc).isoformat()
     itens_por_base = {}
+    cancelados = {}  # {cliente_minusculo: {minuta}} descartadas pela regra "sem_cancelados"
     bases = [("az", usuario, senha, ep.PORTAL_URL, "")]
     if usuario_pex and senha_pex:
         bases.append(("pex", usuario_pex, senha_pex, ep.PORTAL_URL_PEX, PREFIXO_MINUTA_PEX))
@@ -234,6 +243,14 @@ def atualizar_nfs(clientes, usuario, senha, usuario_pex, senha_pex, data_ini, da
         try:
             arq = extrair_tudo(u, s, data_ini, data_fim, pasta_tmp, url, f"nfs_{chave}.xlsx", ep.extrair_nfs_todos)
             df = pd.read_excel(arq)
+            # clientes que nao querem minuta cancelada: descobre quais sao nesta
+            # rodada, tira do relatorio e guarda pra apagar tambem dos fretes
+            sem_canc = carregar_clientes_sem_cancelados()
+            if sem_canc:
+                canc = df["CLIENTE"].astype(str).map(_chave).isin(sem_canc) & df["STATUS CT-e"].astype(str).str.lower().str.startswith("cancel")
+                for cli, mi in zip(df.loc[canc, "CLIENTE"], df.loc[canc, "MINUTA"]):
+                    cancelados.setdefault(_chave(cli), set()).add(prefixo + str(mi))
+                df = df[~canc]
             itens = nf_status.preparar(df, prefixo, carregar_minutas_ignoradas())
             log(f"NFs {chave.upper()}: {len(df)} linhas no relatorio, {len(itens)} notas apos as regras.")
             itens_por_base[chave] = itens
@@ -243,6 +260,7 @@ def atualizar_nfs(clientes, usuario, senha, usuario_pex, senha_pex, data_ini, da
     if itens_por_base:
         try:
             nf_status.gravar(itens_por_base, clientes, inicio, log)
+            nf_status.apagar_minutas(cancelados, clientes, log)
         except Exception as e:
             avisos.append(f"falha ao gravar NFs no Supabase ({e})")
             log(f"AVISO: {avisos[-1]}")
