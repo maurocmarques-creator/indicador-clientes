@@ -57,6 +57,16 @@ h3 .tag-filtro{font-size:.7rem;margin-left:2px}
 .chart-card h3{font-size:.82rem;font-weight:700;color:var(--primary);margin-bottom:12px;text-align:center;text-transform:uppercase;letter-spacing:.5px}
 .chart-card canvas{max-height:280px}
 .table-card{background:#fff;border-radius:10px;padding:16px;box-shadow:var(--shadow);margin-bottom:16px;overflow:auto}
+/* Status Nota Fiscal: tabela compacta, cabe na largura da tela sem rolagem lateral */
+#tab-statusnf,#tab-posicaonf{padding:14px 12px}
+#tab-statusnf .table-card,#tab-posicaonf .table-card{padding:12px;overflow-x:hidden}
+#tab-statusnf table,#tab-posicaonf table{font-size:.7rem;table-layout:auto}
+#tab-statusnf th,#tab-posicaonf th{padding:6px 5px;font-size:.66rem;line-height:1.15;vertical-align:bottom}
+#tab-statusnf td,#tab-posicaonf td{padding:5px 5px;line-height:1.2;overflow-wrap:break-word}
+/* colunas curtas (minuta, CT-e, NF, datas, status) nunca quebram; as de texto (cliente, destinatario, cidade, ocorrencia) quebram por palavra */
+#tab-statusnf td:nth-child(-n+5),#tab-posicaonf td:nth-child(-n+5),
+#tab-statusnf td:nth-child(n+10),#tab-posicaonf td:nth-child(10),#tab-posicaonf td:nth-child(11),
+#tab-posicaonf td:nth-child(13),#tab-posicaonf td:nth-child(14){white-space:nowrap}
 .table-card h3{font-size:.82rem;font-weight:700;color:var(--primary);margin-bottom:12px;text-transform:uppercase;letter-spacing:.5px}
 table{width:100%;border-collapse:collapse;font-size:.8rem}
 th{background:var(--primary);color:#fff;padding:8px 10px;text-align:left;font-weight:600;font-size:.75rem}
@@ -481,7 +491,7 @@ tr:last-child td{border-bottom:none}
           <option value="Não Coletado">Não Coletado</option>
         </select>
       </div>
-      <div style="display:flex;flex-direction:column;gap:3px">
+      <div style="display:none;flex-direction:column;gap:3px">
         <label style="font-size:.75rem;color:var(--gray);font-weight:600">ID Carregamento</label>
         <select id="nf-f-idc" onchange="renderStatusNF()" style="border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:.8rem;color:#1e293b;background:#fff;cursor:pointer">
           <option value="">Todos</option>
@@ -495,7 +505,7 @@ tr:last-child td{border-bottom:none}
       </div>
       <div style="display:flex;flex-direction:column;gap:3px;flex:1;min-width:220px">
         <label style="font-size:.75rem;color:var(--gray);font-weight:600">Buscar</label>
-        <input id="nf-f-busca" type="text" placeholder="Minuta, CT-e, NF ou ID de carregamento..." oninput="renderStatusNF()" style="border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:.8rem;width:100%;box-sizing:border-box">
+        <input id="nf-f-busca" type="text" placeholder="Minuta, CT-e ou NF..." oninput="renderStatusNF()" style="border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:.8rem;width:100%;box-sizing:border-box">
       </div>
       <div style="display:flex;flex-direction:column;gap:3px">
         <label style="font-size:.75rem;color:var(--gray);font-weight:600">&nbsp;</label>
@@ -503,7 +513,7 @@ tr:last-child td{border-bottom:none}
       </div>
     </div>
     <table>
-      <thead><tr><th>Minuta</th><th>CT-e</th><th>NF</th><th>ID de Carregamento</th><th>Data NF</th><th>Data Recebimento</th><th>Cliente</th><th>Destinatário</th><th>Cidade/UF Destino</th><th>Redespacho</th><th>Status CT-e</th><th>Coletada</th></tr></thead>
+      <thead><tr><th>Minuta</th><th>CT-e</th><th>NF</th><th>Data NF</th><th>Data Recebimento</th><th>Cliente</th><th>Destinatário</th><th>Cidade/UF Destino</th><th>Redespacho</th><th>Status CT-e</th><th>Coletada</th></tr></thead>
       <tbody id="tb-nf-status"></tbody>
     </table>
     <p id="nf-status-aviso" style="font-size:.75rem;color:#64748b;margin-top:8px"></p>
@@ -533,7 +543,7 @@ tr:last-child td{border-bottom:none}
         <label style="font-size:.75rem;color:var(--gray);font-weight:600">Situação da Entrega</label>
         <select id="pn-f-situacao" onchange="renderPosicaoNF()" style="border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:.8rem;color:#1e293b;background:#fff;cursor:pointer"><option value="">Todas</option></select>
       </div>
-      <div style="display:flex;flex-direction:column;gap:3px">
+      <div style="display:none;flex-direction:column;gap:3px">
         <label style="font-size:.75rem;color:var(--gray);font-weight:600">ID Carregamento</label>
         <select id="pn-f-idc" onchange="renderPosicaoNF()" style="border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:.8rem;color:#1e293b;background:#fff;cursor:pointer">
           <option value="">Todos</option>
@@ -547,7 +557,7 @@ tr:last-child td{border-bottom:none}
       </div>
       <div style="display:flex;flex-direction:column;gap:3px;flex:1;min-width:220px">
         <label style="font-size:.75rem;color:var(--gray);font-weight:600">Buscar</label>
-        <input id="pn-f-busca" type="text" placeholder="Minuta, CT-e, NF ou ID de carregamento..." oninput="renderPosicaoNF()" style="border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:.8rem;width:100%;box-sizing:border-box">
+        <input id="pn-f-busca" type="text" placeholder="Minuta, CT-e ou NF..." oninput="renderPosicaoNF()" style="border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:.8rem;width:100%;box-sizing:border-box">
       </div>
       <div style="display:flex;flex-direction:column;gap:3px">
         <label style="font-size:.75rem;color:var(--gray);font-weight:600">&nbsp;</label>
@@ -555,7 +565,7 @@ tr:last-child td{border-bottom:none}
       </div>
     </div>
     <table>
-      <thead><tr><th>Minuta</th><th>CT-e</th><th>NF</th><th>ID de Carregamento</th><th>Data NF</th><th>Data Recebimento</th><th>Cliente</th><th>Destinatário</th><th>Cidade/UF Destino</th><th>Redespacho</th><th>Status CT-e</th><th>Coletada</th><th>Situação da Entrega</th><th>Previsão de Entrega</th><th>Entrega Efetiva</th><th>Última Ocorrência</th></tr></thead>
+      <thead><tr><th>Minuta</th><th>CT-e</th><th>NF</th><th>Data NF</th><th>Data Recebimento</th><th>Cliente</th><th>Destinatário</th><th>Cidade/UF Destino</th><th>Redespacho</th><th>Status CT-e</th><th>Coletada</th><th>Situação da Entrega</th><th>Previsão de Entrega</th><th>Entrega Efetiva</th><th>Última Ocorrência</th></tr></thead>
       <tbody id="tb-posicao-nf"></tbody>
     </table>
     <p id="pn-aviso" style="font-size:.75rem;color:#64748b;margin-top:8px"></p>
@@ -2699,7 +2709,6 @@ function renderStatusNF() {
         <td>${ehHistorico?'↳ ':''}${r.minuta||'—'}${badge}</td>
         <td>${r.cte||'—'}</td>
         <td>${r.nf||'—'}</td>
-        <td>${r.id_carregamento||'—'}</td>
         <td>${fmtNfData(r.nf_data)}</td>
         <td>${fmtNfData(r.data_recebimento)}</td>
         <td>${r.cliente||'—'}</td>
@@ -2715,7 +2724,7 @@ function renderStatusNF() {
 
   document.getElementById('tb-nf-status').innerHTML = mostrar.length
     ? mostrar.map(r => linhaHtml(r, false)).join('')
-    : '<tr><td colspan="12" style="text-align:center;color:#64748b;padding:12px">Nenhum resultado para os filtros selecionados</td></tr>';
+    : '<tr><td colspan="11" style="text-align:center;color:#64748b;padding:12px">Nenhum resultado para os filtros selecionados</td></tr>';
 
   const aviso = document.getElementById('nf-status-aviso');
   aviso.textContent = filtradas.length > LIMITE
@@ -2844,7 +2853,6 @@ function renderPosicaoNF() {
         <td>${esc(r.minuta)||'—'}</td>
         <td>${esc(r.cte)||'—'}</td>
         <td>${esc(r.nf)||'—'}</td>
-        <td>${esc(r.id_carregamento)||'—'}</td>
         <td>${fmtNfData(r.nf_data)}</td>
         <td>${fmtNfData(r.data_recebimento)}</td>
         <td>${esc(r.cliente)||'—'}</td>
@@ -2858,7 +2866,7 @@ function renderPosicaoNF() {
         <td style="white-space:nowrap">${fmtNfData(r.entrega_efetiva)}</td>
         <td>${esc(r.ultima_ocorrencia)||'—'}</td>
       </tr>`).join('')
-    : '<tr><td colspan="16" style="text-align:center;color:#64748b;padding:12px">Nenhum resultado para os filtros selecionados</td></tr>';
+    : '<tr><td colspan="15" style="text-align:center;color:#64748b;padding:12px">Nenhum resultado para os filtros selecionados</td></tr>';
 
   document.getElementById('pn-aviso').textContent = filtradas.length > LIMITE
     ? `Mostrando ${LIMITE} de ${filtradas.length.toLocaleString('pt-BR')} resultados — refine a busca ou o filtro pra ver as demais linhas (o Excel leva todas).`
