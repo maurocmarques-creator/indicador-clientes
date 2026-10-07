@@ -260,6 +260,10 @@ def atualizar_nfs(clientes, usuario, senha, usuario_pex, senha_pex, data_ini, da
     if itens_por_base:
         try:
             nf_status.gravar(itens_por_base, clientes, inicio, log)
+            # tambem limpa do banco as minutas da lista explicita (linhas gravadas
+            # antes da minuta entrar na lista nao saem sozinhas)
+            for cli, m in carregar_minutas_ignoradas():
+                cancelados.setdefault(cli, set()).add(m)
             nf_status.apagar_minutas(cancelados, clientes, log)
         except Exception as e:
             avisos.append(f"falha ao gravar NFs no Supabase ({e})")
