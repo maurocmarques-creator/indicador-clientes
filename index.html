@@ -118,8 +118,11 @@ tr:last-child td{border-bottom:none}
       <div class="tab" data-tab="ocorrencias" onclick="showTab('ocorrencias')">⚠️ Ocorrências</div>
       <div class="tab" data-tab="antecipadas" onclick="showTab('antecipadas')">🚀 Entregas Antecipadas</div>
     </div></div>
-  <!-- Status NF (CT-e) ainda nao migrado pro Supabase -- ver supabase/PROJETO.md -->
-  <div class="tab" data-tab="statusnf" onclick="showTab('statusnf')" style="display:none">📄 Status NF</div>
+  <div class="tgrp"><div class="tab tgrp-btn" onclick="toggleMenu(this,event)">📄 Status Nota Fiscal ▾</div>
+    <div class="tmenu">
+      <div class="tab" data-tab="statusnf" onclick="showTab('statusnf')">Confirmação de Coleta</div>
+      <div class="tab" data-tab="posicaonf" onclick="showTab('posicaonf')">Posição NF</div>
+    </div></div>
   <div class="tgrp"><div class="tab tgrp-btn" onclick="toggleMenu(this,event)">Análises ▾</div>
     <div class="tmenu">
       <div class="tab" data-tab="expectativa" onclick="showTab('expectativa')">📊 Expectativa</div>
@@ -447,7 +450,7 @@ tr:last-child td{border-bottom:none}
   </div>
 </div>
 
-<!-- TAB: STATUS NF -->
+<!-- TAB: STATUS NF (Confirmacao de Coleta) + POSICAO NF -->
 <div id="tab-statusnf" class="content">
   <p style="font-size:.78rem;color:#64748b;margin:0 0 14px">Situação da Nota Fiscal / CT-e por minuta, direto do portal. <b>Coletado</b> = CT-e autorizado ou criado (NF já processada) · <b>NF Recebida e Não Coletado</b> = a NF chegou mas ainda não tem CT-e emitido · <b>Não Coletado</b> = CT-e cancelado.</p>
   <div class="kpi-row">
@@ -494,12 +497,64 @@ tr:last-child td{border-bottom:none}
         <label style="font-size:.75rem;color:var(--gray);font-weight:600">Buscar</label>
         <input id="nf-f-busca" type="text" placeholder="Minuta, CT-e, NF ou ID de carregamento..." oninput="renderStatusNF()" style="border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:.8rem;width:100%;box-sizing:border-box">
       </div>
+      <div style="display:flex;flex-direction:column;gap:3px">
+        <label style="font-size:.75rem;color:var(--gray);font-weight:600">&nbsp;</label>
+        <button onclick="exportarStatusNFExcel()" style="white-space:nowrap;border:1px solid var(--border);border-radius:6px;padding:7px 14px;font-size:.8rem;font-weight:600;color:#166534;background:#f0fdf4;cursor:pointer">⬇ Exportar Excel</button>
+      </div>
     </div>
     <table>
       <thead><tr><th>Minuta</th><th>CT-e</th><th>NF</th><th>ID de Carregamento</th><th>Data NF</th><th>Data Recebimento</th><th>Cliente</th><th>Destinatário</th><th>Cidade/UF Destino</th><th>Redespacho</th><th>Status CT-e</th><th>Coletada</th></tr></thead>
       <tbody id="tb-nf-status"></tbody>
     </table>
     <p id="nf-status-aviso" style="font-size:.75rem;color:#64748b;margin-top:8px"></p>
+  </div>
+</div>
+
+<!-- TAB: POSICAO NF -->
+<div id="tab-posicaonf" class="content">
+  <p style="font-size:.78rem;color:#64748b;margin:0 0 14px">Todas as notas fiscais da tela <b>Confirmação de Coleta</b>, com a <b>situação da entrega</b> e a <b>última ocorrência</b> registrada na minuta. Notas sem minuta no relatório de emissões ficam com esses dois campos em branco (—).</p>
+  <div class="table-card">
+    <h3>Posição por Nota Fiscal</h3>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px;align-items:flex-end">
+      <div style="display:flex;flex-direction:column;gap:3px">
+        <label style="font-size:.75rem;color:var(--gray);font-weight:600">Cliente</label>
+        <select id="pn-f-cliente" onchange="renderPosicaoNF()" style="border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:.8rem;color:#1e293b;background:#fff;cursor:pointer"><option value="">Todos</option></select>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:3px">
+        <label style="font-size:.75rem;color:var(--gray);font-weight:600">Status</label>
+        <select id="pn-f-status" onchange="renderPosicaoNF()" style="border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:.8rem;color:#1e293b;background:#fff;cursor:pointer">
+          <option value="">Todos</option>
+          <option value="Coletado">Coletado</option>
+          <option value="NF Recebida e Não Coletado">NF Recebida e Não Coletado</option>
+          <option value="Não Coletado">Não Coletado</option>
+        </select>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:3px">
+        <label style="font-size:.75rem;color:var(--gray);font-weight:600">ID Carregamento</label>
+        <select id="pn-f-idc" onchange="renderPosicaoNF()" style="border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:.8rem;color:#1e293b;background:#fff;cursor:pointer">
+          <option value="">Todos</option>
+          <option value="com">Com ID</option>
+          <option value="sem">Sem ID</option>
+        </select>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:3px">
+        <label style="font-size:.75rem;color:var(--gray);font-weight:600">Mês <span style="font-weight:400">(Recebimento)</span></label>
+        <select id="pn-f-mes" onchange="renderPosicaoNF()" style="border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:.8rem;color:#1e293b;background:#fff;cursor:pointer"><option value="">Todos</option></select>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:3px;flex:1;min-width:220px">
+        <label style="font-size:.75rem;color:var(--gray);font-weight:600">Buscar</label>
+        <input id="pn-f-busca" type="text" placeholder="Minuta, CT-e, NF ou ID de carregamento..." oninput="renderPosicaoNF()" style="border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:.8rem;width:100%;box-sizing:border-box">
+      </div>
+      <div style="display:flex;flex-direction:column;gap:3px">
+        <label style="font-size:.75rem;color:var(--gray);font-weight:600">&nbsp;</label>
+        <button onclick="exportarPosicaoNFExcel()" style="white-space:nowrap;border:1px solid var(--border);border-radius:6px;padding:7px 14px;font-size:.8rem;font-weight:600;color:#166534;background:#f0fdf4;cursor:pointer">⬇ Exportar Excel</button>
+      </div>
+    </div>
+    <table>
+      <thead><tr><th>Minuta</th><th>CT-e</th><th>NF</th><th>ID de Carregamento</th><th>Data NF</th><th>Data Recebimento</th><th>Cliente</th><th>Destinatário</th><th>Cidade/UF Destino</th><th>Redespacho</th><th>Status CT-e</th><th>Coletada</th><th>Situação da Entrega</th><th>Última Ocorrência</th></tr></thead>
+      <tbody id="tb-posicao-nf"></tbody>
+    </table>
+    <p id="pn-aviso" style="font-size:.75rem;color:#64748b;margin-top:8px"></p>
   </div>
 </div>
 
@@ -558,10 +613,12 @@ tr:last-child td{border-bottom:none}
 // tabela public.fretes.
 let RAW = { meta: { meses: [], tipos_emissao: [], ufs: [], clientes: [], gerado_em: '' }, rows: [] };
 
-// Status NF (CT-e) ainda nao migrado pro Supabase (ver
-// supabase/PROJETO.md) -- fica vazio por enquanto; a aba "Status NF"
-// fica escondida (ver o atributo style do botao da aba, mais abaixo).
+// Status Nota Fiscal (Confirmacao de Coleta + Posicao NF): notas fiscais por
+// minuta, da tabela public.nf_status (copiada do indicador-ansell por
+// sync_nf_status.py). Carregada junto com os fretes, so dos clientes
+// selecionados/permitidos.
 let NF_STATUS = [];
+const NF_CAMPOS = 'minuta,nf,cte,status_cte,nf_data,data_recebimento,cliente,destino,cidade_destino,uf_destino,local_entrega,cidade_entrega,uf_entrega,coletada,id_carregamento,historico';
 
 // Historico de ocorrencias por minuta, carregado de
 // public.ocorrencias_historico. Formato: {"<MINUTA>": [{"descricao":
@@ -996,12 +1053,21 @@ async function carregarDadosSupabase() {
     clienteIds = CLIENTES_SELECIONADOS;
   }
 
-  if (!clienteIds.length) { RAW = _rawVazio(); OCORRENCIAS_HIST = {}; recalcularDerivadosDeRAW(); return; }
+  if (!clienteIds.length) { RAW = _rawVazio(); OCORRENCIAS_HIST = {}; NF_STATUS = []; _resetFiltrosNF(); recalcularDerivadosDeRAW(); return; }
 
   const [fretes, ocorrencias] = await Promise.all([
     _buscarTudo('fretes', FRETE_CAMPOS, clienteIds, 'minuta'),
     _buscarTudo('ocorrencias_historico', 'minuta,descricao,detectado_em', clienteIds, 'detectado_em'),
   ]);
+
+  // NFs: se a tabela ainda nao existe / der erro, so as abas de NF ficam vazias
+  try {
+    NF_STATUS = await _buscarTudo('nf_status', NF_CAMPOS, clienteIds, 'ordem');
+  } catch (e) {
+    console.warn('nf_status indisponivel:', e.message || e);
+    NF_STATUS = [];
+  }
+  _resetFiltrosNF();
 
   const rows = fretes.map(_freteParaRow);
   const hist = {};
@@ -1018,6 +1084,16 @@ async function carregarDadosSupabase() {
 
   RAW = { meta: { meses, tipos_emissao: tipos, ufs, clientes, gerado_em: _fmtDataHoraBR(atualizadoEm) }, rows };
   recalcularDerivadosDeRAW();
+}
+
+// As listas de Cliente/Mes das abas de NF sao montadas uma unica vez a partir
+// de NF_STATUS; quando o admin troca os clientes selecionados elas precisam
+// voltar so pra "Todos" pra serem remontadas com os dados novos.
+function _resetFiltrosNF() {
+  ['nf-f-cliente', 'nf-f-mes', 'pn-f-cliente', 'pn-f-mes'].forEach(id => {
+    const s = document.getElementById(id);
+    if (s) { while (s.options.length > 1) s.remove(1); s.value = ''; }
+  });
 }
 
 async function _aplicarSelecaoClientesAdmin() {
@@ -2582,6 +2658,11 @@ function renderStatusNF() {
   else if (fIdc==='sem') filtradas = filtradas.filter(r => !r.id_carregamento);
   if (busca) filtradas = filtradas.filter(r => (r.minuta+' '+r.cte+' '+r.nf+' '+(r.id_carregamento||'')).toLowerCase().includes(busca));
 
+  // Guardado antes do corte de exibicao (LIMITE), pra exportarStatusNFExcel()
+  // levar pro Excel 100% das linhas filtradas, mesmo quando a tela mostra
+  // so as primeiras (por volume).
+  STATUSNF_EXPORT = filtradas;
+
   const LIMITE = 500;
   const mostrar = filtradas.slice(0, LIMITE);
   const corSituacao = c => c==='Coletado' ? '#166534' : c==='Não Coletado' ? '#991b1b' : '#92400e';
@@ -2637,6 +2718,166 @@ function renderStatusNF() {
     ? `Mostrando ${LIMITE} de ${filtradas.length.toLocaleString('pt-BR')} resultados — refine a busca ou o filtro pra ver as demais linhas.`
     : '';
 }
+
+function exportarStatusNFExcel() {
+  function fmtBR(iso) {
+    if (!iso) return '';
+    const [y,m,d] = iso.split('-');
+    return d+'/'+m+'/'+y;
+  }
+  function linhaBruta(r) {
+    return {
+      'MINUTA': r.minuta,
+      'CT-e': r.cte,
+      'NF': r.nf,
+      'ID DE CARREGAMENTO': r.id_carregamento||'',
+      'DATA NF': fmtBR(r.nf_data),
+      'DATA RECEBIMENTO': fmtBR(r.data_recebimento),
+      'CLIENTE': r.cliente,
+      'DESTINATARIO': r.destino,
+      'CIDADE DESTINO': r.cidade_destino,
+      'UF DESTINO': r.uf_destino,
+      'LOCAL ENTREGA': r.local_entrega||'',
+      'CIDADE ENTREGA': r.cidade_entrega||'',
+      'UF ENTREGA': r.uf_entrega||'',
+      'STATUS CT-e': r.status_cte,
+      'COLETADA': r.coletada,
+    };
+  }
+
+  // STATUSNF_EXPORT e o filtrado completo (ver renderStatusNF), de
+  // antes do corte de exibicao (LIMITE=500) -- exporta 100% das linhas
+  // que batem com os filtros, mesmo quando a tela mostra so uma parte.
+  const linhas = STATUSNF_EXPORT.map(linhaBruta);
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(linhas);
+  XLSX.utils.book_append_sheet(wb, ws, 'Status NF');
+
+  const hoje = new Date();
+  const stamp = hoje.toISOString().slice(0,10);
+  XLSX.writeFile(wb, `status_nf_${stamp}.xlsx`);
+}
+
+// --- POSICAO NF ---
+// Mesmas notas da aba Confirmacao de Coleta (NF_STATUS), cada uma com a
+// situacao da entrega (STATUS) e a ultima ocorrencia (DESCRICAO_ULTIMO)
+// da minuta correspondente em RAW. Nota sem minuta em RAW fica com os
+// dois campos em branco.
+function _posicaoNfLinhas() {
+  const porMinuta = new Map();
+  allRows.forEach(r => { if (!porMinuta.has(r.MINUTA)) porMinuta.set(r.MINUTA, r); });
+  return NF_STATUS.map(n => {
+    const r = porMinuta.get(n.minuta);
+    return {...n, situacao: r ? r.STATUS : '', ultima_ocorrencia: r ? (r.DESCRICAO_ULTIMO || '') : ''};
+  });
+}
+
+function renderPosicaoNF() {
+  const todas = _posicaoNfLinhas();
+  const fCliente = document.getElementById('pn-f-cliente');
+  if (fCliente.options.length <= 1) {
+    const clientes = [...new Set(todas.map(r=>r.cliente).filter(Boolean))].sort();
+    clientes.forEach(c => { const o = document.createElement('option'); o.value = c; o.text = c; fCliente.add(o); });
+  }
+  const fMes = document.getElementById('pn-f-mes');
+  if (fMes.options.length <= 1) {
+    const MES_ABREV_NF = {'01':'Jan','02':'Fev','03':'Mar','04':'Abr','05':'Mai','06':'Jun','07':'Jul','08':'Ago','09':'Set','10':'Out','11':'Nov','12':'Dez'};
+    const meses = [...new Set(todas.map(r=>(r.data_recebimento||'').slice(0,7)).filter(Boolean))].sort();
+    meses.forEach(m => {
+      const o = document.createElement('option');
+      o.value = m;
+      const [y,mm] = m.split('-');
+      o.text = (MES_ABREV_NF[mm]||mm)+'/'+y;
+      fMes.add(o);
+    });
+  }
+  const cliente = fCliente.value;
+  const status = document.getElementById('pn-f-status').value;
+  const mes = fMes.value;
+  const fIdc = document.getElementById('pn-f-idc').value;
+  const busca = document.getElementById('pn-f-busca').value.trim().toLowerCase();
+
+  let filtradas = todas.filter(r =>
+    (!cliente || r.cliente === cliente) &&
+    (!mes || (r.data_recebimento||'').startsWith(mes)) &&
+    (!status || r.coletada === status)
+  );
+  if (fIdc==='com') filtradas = filtradas.filter(r => r.id_carregamento);
+  else if (fIdc==='sem') filtradas = filtradas.filter(r => !r.id_carregamento);
+  if (busca) filtradas = filtradas.filter(r => (r.minuta+' '+r.cte+' '+r.nf+' '+(r.id_carregamento||'')).toLowerCase().includes(busca));
+
+  // Guardado antes do corte de exibicao (LIMITE), pro Excel levar 100%.
+  POSICAONF_EXPORT = filtradas;
+
+  const LIMITE = 500;
+  const mostrar = filtradas.slice(0, LIMITE);
+  const corColetada = c => c==='Coletado' ? '#166534' : c==='Não Coletado' ? '#991b1b' : '#92400e';
+  const corSituacao = s => s==='NO PRAZO' ? '#166534' : (s==='EM ATRASO' || s==='EM TRANSITO FORA DO PRAZO') ? '#991b1b' : '#64748b';
+  const fmtNfData = iso => {
+    if (!iso) return '—';
+    const [y,m,d] = iso.split('-');
+    return d+'/'+m+'/'+y;
+  };
+  const cidadeUf = (cidade, uf) => cidade ? cidade+(uf?'/'+uf:'') : (uf||'—');
+  const esc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+  document.getElementById('tb-posicao-nf').innerHTML = mostrar.length
+    ? mostrar.map(r => `<tr>
+        <td>${esc(r.minuta)||'—'}</td>
+        <td>${esc(r.cte)||'—'}</td>
+        <td>${esc(r.nf)||'—'}</td>
+        <td>${esc(r.id_carregamento)||'—'}</td>
+        <td>${fmtNfData(r.nf_data)}</td>
+        <td>${fmtNfData(r.data_recebimento)}</td>
+        <td>${esc(r.cliente)||'—'}</td>
+        <td>${esc(r.destino)||'—'}</td>
+        <td>${esc(cidadeUf(r.cidade_destino, r.uf_destino))}</td>
+        <td>${esc(r.local_entrega)||'—'}</td>
+        <td>${esc(r.status_cte)||'—'}</td>
+        <td style="color:${corColetada(r.coletada)};font-weight:600">${esc(r.coletada)}</td>
+        <td style="color:${corSituacao(r.situacao)};font-weight:600">${esc(r.situacao)||'—'}</td>
+        <td>${esc(r.ultima_ocorrencia)||'—'}</td>
+      </tr>`).join('')
+    : '<tr><td colspan="14" style="text-align:center;color:#64748b;padding:12px">Nenhum resultado para os filtros selecionados</td></tr>';
+
+  document.getElementById('pn-aviso').textContent = filtradas.length > LIMITE
+    ? `Mostrando ${LIMITE} de ${filtradas.length.toLocaleString('pt-BR')} resultados — refine a busca ou o filtro pra ver as demais linhas (o Excel leva todas).`
+    : `${filtradas.length.toLocaleString('pt-BR')} resultado(s).`;
+}
+
+function exportarPosicaoNFExcel() {
+  function fmtBR(iso) {
+    if (!iso) return '';
+    const [y,m,d] = iso.split('-');
+    return d+'/'+m+'/'+y;
+  }
+  // POSICAONF_EXPORT e o filtrado completo (ver renderPosicaoNF), de
+  // antes do corte de exibicao -- o Excel leva 100% das linhas filtradas.
+  const linhas = POSICAONF_EXPORT.map(r => ({
+    'MINUTA': r.minuta,
+    'CT-e': r.cte,
+    'NF': r.nf,
+    'ID DE CARREGAMENTO': r.id_carregamento||'',
+    'DATA NF': fmtBR(r.nf_data),
+    'DATA RECEBIMENTO': fmtBR(r.data_recebimento),
+    'CLIENTE': r.cliente,
+    'DESTINATARIO': r.destino,
+    'CIDADE DESTINO': r.cidade_destino,
+    'UF DESTINO': r.uf_destino,
+    'LOCAL ENTREGA': r.local_entrega||'',
+    'STATUS CT-e': r.status_cte,
+    'COLETADA': r.coletada,
+    'SITUACAO DA ENTREGA': r.situacao||'',
+    'ULTIMA OCORRENCIA': r.ultima_ocorrencia||'',
+  }));
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(linhas);
+  XLSX.utils.book_append_sheet(wb, ws, 'Posicao NF');
+  XLSX.writeFile(wb, `posicao_nf_${new Date().toISOString().slice(0,10)}.xlsx`);
+}
+
+let STATUSNF_EXPORT = [];
+let POSICAONF_EXPORT = [];
 
 // --- EXPECTATIVA ---
 function setExpCliente(cli) {
@@ -3312,13 +3553,14 @@ function showTab(id) {
   const grp = btn.closest('.tgrp'); if (grp) { grp.querySelector('.tgrp-btn').classList.add('active'); grp.classList.remove('open'); }
   conteudo.classList.add('active');
   // Hide global filters on tabs that have their own filter row (nao usam Ano/Mes/etc.)
-  document.querySelector('.filters').style.display = (id === 'expectativa' || id === 'statusnf') ? 'none' : 'flex';
+  document.querySelector('.filters').style.display = (id === 'expectativa' || id === 'statusnf' || id === 'posicaonf') ? 'none' : 'flex';
   if (id === 'mapa') renderMapa();
   if (id === 'expectativa') renderExpectativa();
   if (id === 'transito') renderTransito();
   if (id === 'ocorrencias') renderOcorrencias();
   if (id === 'antecipadas') renderAntecipadas();
   if (id === 'statusnf') renderStatusNF();
+  if (id === 'posicaonf') renderPosicaoNF();
   // Guarda a aba atual no # da URL, sem recarregar a pagina -- assim, ao
   // atualizar (F5) ou reabrir o link, volta pra mesma aba em vez de ir
   // sempre pra "Totais". Nao muda nada no servidor/hospedagem.

@@ -81,4 +81,10 @@ function aplicarPermissoesPaineis(perfil) {
   document.querySelectorAll('.tab[data-tab]').forEach(btn => {
     if (!permitidos.has(btn.dataset.tab)) btn.style.display = 'none';
   });
+  // grupo de menu (.tgrp) sem nenhuma aba liberada some inteiro, em vez de
+  // ficar um botao de menu vazio
+  document.querySelectorAll('.tgrp').forEach(g => {
+    const visiveis = [...g.querySelectorAll('.tab[data-tab]')].filter(t => t.style.display !== 'none');
+    if (!visiveis.length) g.style.display = 'none';
+  });
 }
