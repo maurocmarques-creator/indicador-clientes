@@ -1108,7 +1108,7 @@ async function carregarDadosSupabase() {
 // de NF_STATUS; quando o admin troca os clientes selecionados elas precisam
 // voltar so pra "Todos" pra serem remontadas com os dados novos.
 function _resetFiltrosNF() {
-  ['nf-f-cliente', 'nf-f-mes', 'pn-f-cliente', 'pn-f-mes', 'pn-f-mesprev', 'pn-f-situacao'].forEach(id => {
+  ['nf-f-cliente', 'nf-f-status', 'nf-f-mes', 'pn-f-cliente', 'pn-f-mes', 'pn-f-mesprev', 'pn-f-situacao'].forEach(id => {
     const s = document.getElementById(id);
     if (s) { while (s.options.length > 1) s.remove(1); s.value = ''; delete s.dataset.sig; }
   });
@@ -2618,27 +2618,50 @@ function toggleNfHistorico(chaveLinha) {
 }
 
 function renderStatusNF() {
-  const fCliente = document.getElementById('nf-f-cliente');
-  if (fCliente.options.length <= 1) {
-    const clientes = [...new Set(NF_STATUS.map(r=>r.cliente).filter(Boolean))].sort();
-    clientes.forEach(c => { const o = document.createElement('option'); o.value = c; o.text = c; fCliente.add(o); });
+  // Filtros em cascata (igual a Posicao NF): cada lista so mostra valores que
+  // existem nas linhas que passam pelos OUTROS filtros.
+  const MES_AB = {'01':'Jan','02':'Fev','03':'Mar','04':'Abr','05':'Mai','06':'Jun','07':'Jul','08':'Ago','09':'Set','10':'Out','11':'Nov','12':'Dez'};
+  const mesTxt = m => { const [y,mm] = m.split('-'); return (MES_AB[mm]||mm)+'/'+y; };
+  const el = id => document.getElementById(id);
+  const fIdcSel = el('nf-f-idc').value;
+  const buscaF = el('nf-f-busca').value.trim().toLowerCase();
+  const filtros = {
+    cliente: { sel: el('nf-f-cliente'), val: r => r.cliente || '' },
+    status:  { sel: el('nf-f-status'),  val: r => r.coletada || '' },
+    mes:     { sel: el('nf-f-mes'),     val: r => (r.data_recebimento||'').slice(0,7), fmt: mesTxt },
+  };
+  const passa = (r, ignorar) => {
+    for (const k in filtros) {
+      if (k !== ignorar && filtros[k].sel.value && filtros[k].val(r) !== filtros[k].sel.value) return false;
+    }
+    if (fIdcSel==='com' && !r.id_carregamento) return false;
+    if (fIdcSel==='sem' && r.id_carregamento) return false;
+    if (buscaF && !(r.minuta+' '+r.cte+' '+r.nf+' '+(r.id_carregamento||'')).toLowerCase().includes(buscaF)) return false;
+    return true;
+  };
+  const montarOpcoes = k => {
+    const f = filtros[k], atual = f.sel.value;
+    const vals = [...new Set(NF_STATUS.filter(r => passa(r, k)).map(f.val).filter(Boolean))].sort();
+    const opts = [['', 'Todos'], ...vals.map(v => [v, f.fmt ? f.fmt(v) : v])];
+    const sig = opts.map(o => o[0]).join('|');
+    if (f.sel.dataset.sig !== sig) {
+      f.sel.innerHTML = '';
+      opts.forEach(([v, t]) => f.sel.add(new Option(t, v)));
+      f.sel.dataset.sig = sig;
+    }
+    f.sel.value = opts.some(o => o[0] === atual) ? atual : '';
+    return f.sel.value !== atual;
+  };
+  for (let i = 0; i < 4; i++) {
+    let mudou = false;
+    Object.keys(filtros).forEach(k => { if (montarOpcoes(k)) mudou = true; });
+    if (!mudou) break;
   }
-  const fMes = document.getElementById('nf-f-mes');
-  if (fMes.options.length <= 1) {
-    const MES_ABREV_NF = {'01':'Jan','02':'Fev','03':'Mar','04':'Abr','05':'Mai','06':'Jun','07':'Jul','08':'Ago','09':'Set','10':'Out','11':'Nov','12':'Dez'};
-    const meses = [...new Set(NF_STATUS.map(r=>(r.data_recebimento||'').slice(0,7)).filter(Boolean))].sort();
-    meses.forEach(m => {
-      const o = document.createElement('option');
-      o.value = m;
-      const [y,mm] = m.split('-');
-      o.text = (MES_ABREV_NF[mm]||mm)+'/'+y;
-      fMes.add(o);
-    });
-  }
-  const cliente = fCliente.value;
-  const status = document.getElementById('nf-f-status').value;
+  const fMes = filtros.mes.sel;
+  const cliente = filtros.cliente.sel.value;
+  const status = filtros.status.sel.value;
   const mes = fMes.value;
-  const busca = document.getElementById('nf-f-busca').value.trim().toLowerCase();
+  const busca = buscaF;
 
   const base = NF_STATUS.filter(r =>
     (!cliente || r.cliente === cliente) &&
