@@ -555,7 +555,7 @@ tr:last-child td{border-bottom:none}
       </div>
     </div>
     <table>
-      <thead><tr><th>Minuta</th><th>CT-e</th><th>NF</th><th>ID de Carregamento</th><th>Data NF</th><th>Data Recebimento</th><th>Cliente</th><th>Destinatário</th><th>Cidade/UF Destino</th><th>Redespacho</th><th>Status CT-e</th><th>Coletada</th><th>Situação da Entrega</th><th>Última Ocorrência</th></tr></thead>
+      <thead><tr><th>Minuta</th><th>CT-e</th><th>NF</th><th>ID de Carregamento</th><th>Data NF</th><th>Data Recebimento</th><th>Cliente</th><th>Destinatário</th><th>Cidade/UF Destino</th><th>Redespacho</th><th>Status CT-e</th><th>Coletada</th><th>Situação da Entrega</th><th>Previsão de Entrega</th><th>Entrega Efetiva</th><th>Última Ocorrência</th></tr></thead>
       <tbody id="tb-posicao-nf"></tbody>
     </table>
     <p id="pn-aviso" style="font-size:.75rem;color:#64748b;margin-top:8px"></p>
@@ -2772,7 +2772,13 @@ function _posicaoNfLinhas() {
   allRows.forEach(r => { if (!porMinuta.has(r.MINUTA)) porMinuta.set(r.MINUTA, r); });
   return NF_STATUS.map(n => {
     const r = porMinuta.get(n.minuta);
-    return {...n, situacao: r ? r.STATUS : '', ultima_ocorrencia: r ? (r.DESCRICAO_ULTIMO || '') : ''};
+    return {...n,
+      situacao: r ? r.STATUS : '',
+      ultima_ocorrencia: r ? (r.DESCRICAO_ULTIMO || '') : '',
+      // com agendamento, a previsao de entrega e a data do agendamento
+      agendada: !!(r && r['DATA DE AGENDAMENTO']),
+      previsao: r ? (r['DATA DE AGENDAMENTO'] || r['PREV. ENTREGA'] || '') : '',
+      entrega_efetiva: r ? (r['DATA ENTREGA'] || '') : ''};
   });
 }
 
@@ -2848,9 +2854,11 @@ function renderPosicaoNF() {
         <td>${esc(r.status_cte)||'—'}</td>
         <td style="color:${corColetada(r.coletada)};font-weight:600">${esc(r.coletada)}</td>
         <td style="color:${corSituacao(r.situacao)};font-weight:600">${esc(r.situacao)||'—'}</td>
+        <td style="white-space:nowrap">${fmtNfData(r.previsao)}${r.agendada ? ' <span title="Previsão = data do agendamento" style="font-size:.66rem;font-weight:700;color:#1e40af;background:#dbeafe;border-radius:999px;padding:1px 6px">agend.</span>' : ''}</td>
+        <td style="white-space:nowrap">${fmtNfData(r.entrega_efetiva)}</td>
         <td>${esc(r.ultima_ocorrencia)||'—'}</td>
       </tr>`).join('')
-    : '<tr><td colspan="14" style="text-align:center;color:#64748b;padding:12px">Nenhum resultado para os filtros selecionados</td></tr>';
+    : '<tr><td colspan="16" style="text-align:center;color:#64748b;padding:12px">Nenhum resultado para os filtros selecionados</td></tr>';
 
   document.getElementById('pn-aviso').textContent = filtradas.length > LIMITE
     ? `Mostrando ${LIMITE} de ${filtradas.length.toLocaleString('pt-BR')} resultados — refine a busca ou o filtro pra ver as demais linhas (o Excel leva todas).`
@@ -2880,6 +2888,8 @@ function exportarPosicaoNFExcel() {
     'STATUS CT-e': r.status_cte,
     'COLETADA': r.coletada,
     'SITUACAO DA ENTREGA': r.situacao||'',
+    'PREVISAO DE ENTREGA': fmtBR(r.previsao),
+    'ENTREGA EFETIVA': fmtBR(r.entrega_efetiva),
     'ULTIMA OCORRENCIA': r.ultima_ocorrencia||'',
   }));
   const wb = XLSX.utils.book_new();
