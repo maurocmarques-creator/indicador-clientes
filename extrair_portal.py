@@ -118,6 +118,74 @@ def extrair_todos(page, data_ini, data_fim, pasta_saida: Path, base_url=PORTAL_U
     return destino
 
 
+# Relatorio personalizado (Meus relatorios) com as colunas de NF/CT-e usadas
+# pelas abas Status Nota Fiscal -- mesmo nome nas duas bases.
+RELATORIO_NFS = "NFs_Emitida_Ansell"
+
+
+def _marcar_status_minuta_todas(page):
+    """Abre o painel 'Status Minuta', desmarca o padrao (TODAS / EMITIDAS,
+    id_0) e marca so 'TODAS'. O id da caixa 'TODAS' muda de uma base pra
+    outra (id_18 na AZ, id_16 na PEX), entao acha pelo texto do rotulo."""
+    page.click("#minuta_status")
+    page.wait_for_selector("#minuta_status_id_1", state="visible", timeout=10000)
+    id_todas = page.evaluate("""() => {
+        const i = [...document.querySelectorAll('input[id^=minuta_status_id_]')]
+          .find(x => (x.closest('label') || x.parentElement).innerText.trim().toUpperCase() === 'TODAS');
+        return i ? i.id : null;
+    }""")
+    if not id_todas:
+        raise RuntimeError("Caixa 'TODAS' do Status Minuta nao encontrada.")
+    if page.is_checked("#minuta_status_id_0"):
+        page.uncheck("#minuta_status_id_0")
+    page.check("#" + id_todas)
+    page.click("#minuta_status")  # fecha o painel
+
+
+def _marcar_status_cte_todas(page):
+    """'Status CTe' e um <select> simples -- escolhe TODAS (value=0),
+    localizado pela posicao ao lado do botao de Status Minuta."""
+    select = page.locator("#minuta_status").locator(
+        "xpath=ancestor::td[1]/following-sibling::td[1]//select"
+    )
+    select.select_option(value="0")
+
+
+def extrair_nfs_todos(page, data_ini, data_fim, pasta_saida: Path, base_url=PORTAL_URL, nome_arquivo="nfs_todos.xlsx") -> Path:
+    """Relatorio de Notas Fiscais de TODOS os clientes (campo Cliente em
+    branco), Status Minuta/CT-e = TODAS -- mesmo fluxo do indicador-ansell,
+    mas sem filtrar por cliente."""
+    log("=== Extraindo Notas Fiscais de TODOS os clientes ===")
+    page.goto(base_url + CAMINHO_RELATORIO)
+    page.wait_for_load_state("networkidle")
+
+    set_date_range(page, data_ini, data_fim)
+    _marcar_status_cte_todas(page)
+    _marcar_status_minuta_todas(page)
+
+    page.get_by_role("button", name="PESQUISAR").click()
+    page.wait_for_selector("text=/registros|Selecione um dos relat/i", timeout=30000)
+
+    page.get_by_text("Personalizado Excel", exact=False).click()
+    page.wait_for_selector("text=Personalizar Relatório", timeout=15000)
+    page.get_by_text("Meus relatórios", exact=False).click()
+    page.wait_for_selector("text=Relatórios Personalizados", timeout=15000)
+    page.get_by_role("radio", name=RELATORIO_NFS).check()
+
+    pasta_saida.mkdir(parents=True, exist_ok=True)
+    destino = pasta_saida / nome_arquivo
+    with page.expect_download(timeout=300000) as download_info:
+        page.get_by_role("button", name="Gerar").click()
+        try:
+            page.wait_for_selector("text=Escolha o tipo de exportação", timeout=5000)
+            page.get_by_role("button", name="XLSX").click()
+        except PlaywrightTimeoutError:
+            pass
+    download_info.value.save_as(destino)
+    log(f"Salvo: {destino}")
+    return destino
+
+
 def main():
     usuario = os.environ.get("PORTAL_USER")
     senha = os.environ.get("PORTAL_PASS")

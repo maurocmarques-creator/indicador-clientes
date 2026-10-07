@@ -37,7 +37,7 @@ Uso:
 import os
 import smtplib
 import sys
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from email.message import EmailMessage
 from email.utils import formataddr
 from pathlib import Path
@@ -47,6 +47,7 @@ from playwright.sync_api import sync_playwright
 
 import atualizar_dashboard as ad
 import extrair_portal as ep
+import nf_status
 import supabase_db
 
 REPO_DIR = Path(__file__).parent
@@ -69,7 +70,7 @@ def log(msg):
         pass  # logging nunca deve derrubar o pipeline
 
 
-def extrair_tudo(usuario, senha, data_ini, data_fim, pasta_tmp: Path, base_url=ep.PORTAL_URL, nome_arquivo="todos.xlsx") -> Path:
+def extrair_tudo(usuario, senha, data_ini, data_fim, pasta_tmp: Path, base_url=ep.PORTAL_URL, nome_arquivo="todos.xlsx", extrator=None) -> Path:
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         context = browser.new_context(accept_downloads=True)
@@ -78,7 +79,7 @@ def extrair_tudo(usuario, senha, data_ini, data_fim, pasta_tmp: Path, base_url=e
 
         try:
             ep.login(page, usuario, senha, base_url)
-            destino = ep.extrair_todos(page, data_ini, data_fim, pasta_tmp, base_url, nome_arquivo)
+            destino = (extrator or ep.extrair_todos)(page, data_ini, data_fim, pasta_tmp, base_url, nome_arquivo)
         except Exception:
             diag_dir = pasta_tmp / "diagnostico" / nome_arquivo.replace(".xlsx", "")
             diag_dir.mkdir(parents=True, exist_ok=True)
@@ -207,6 +208,36 @@ def processar_cliente(cliente, df_tudo, pasta_consolidados, mes_abrev):
     return len(rows), len(novas)
 
 
+def atualizar_nfs(clientes, usuario, senha, usuario_pex, senha_pex, data_ini, data_fim, pasta_tmp):
+    """Status Nota Fiscal: relatorio de NFs de TODOS os clientes, nas duas
+    bases (AZ e PEX), gravado em public.nf_status. Passo isolado: falha aqui
+    so e logada (as NFs ficam como estavam), nunca derruba o resto. Retorna
+    uma mensagem de aviso (ou None se tudo certo)."""
+    avisos = []
+    inicio = datetime.now(timezone.utc).isoformat()
+    itens_por_base = {}
+    bases = [("az", usuario, senha, ep.PORTAL_URL, "")]
+    if usuario_pex and senha_pex:
+        bases.append(("pex", usuario_pex, senha_pex, ep.PORTAL_URL_PEX, PREFIXO_MINUTA_PEX))
+    for chave, u, s, url, prefixo in bases:
+        try:
+            arq = extrair_tudo(u, s, data_ini, data_fim, pasta_tmp, url, f"nfs_{chave}.xlsx", ep.extrair_nfs_todos)
+            df = pd.read_excel(arq)
+            itens = nf_status.preparar(df, prefixo)
+            log(f"NFs {chave.upper()}: {len(df)} linhas no relatorio, {len(itens)} notas apos as regras.")
+            itens_por_base[chave] = itens
+        except Exception as e:
+            avisos.append(f"NFs da base {chave.upper()} nao atualizadas ({e})")
+            log(f"AVISO: {avisos[-1]}")
+    if itens_por_base:
+        try:
+            nf_status.gravar(itens_por_base, clientes, inicio, log)
+        except Exception as e:
+            avisos.append(f"falha ao gravar NFs no Supabase ({e})")
+            log(f"AVISO: {avisos[-1]}")
+    return "; ".join(avisos) or None
+
+
 def enviar_email(assunto, corpo_html):
     remetente = os.environ.get("EMAIL_USER")
     senha = os.environ.get("EMAIL_PASS")
@@ -283,6 +314,8 @@ def main():
         if resultado:
             resumo.append((cliente["nome"], cliente.get("ativo", False), *resultado))
 
+    aviso_nf = atualizar_nfs(clientes, usuario, senha, usuario_pex, senha_pex, data_ini, data_fim, pasta_tmp)
+
     agora = datetime.now().strftime("%d/%m/%Y %H:%M")
     itens = "".join(
         f"<li>{nome}{'' if ativo else ' (pendente de revisao)'}: {n_linhas} minutas, {n_oco} ocorrencia(s) nova(s)</li>"
@@ -291,6 +324,8 @@ def main():
     corpo_html = f"<p>A rotina rodou normalmente em {agora}.</p>"
     if aviso_pex:
         corpo_html += f"<p><b>Atencao:</b> {aviso_pex}</p>"
+    if aviso_nf:
+        corpo_html += f"<p><b>Atencao (Status Nota Fiscal):</b> {aviso_nf}</p>"
     corpo_html += f"<ul>{itens}</ul>"
     enviar_email("Indicador Clientes - Atualizado com Sucesso" + (" (sem a base PEX)" if aviso_pex else ""), corpo_html)
 
