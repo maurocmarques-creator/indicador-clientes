@@ -1110,7 +1110,7 @@ async function carregarDadosSupabase() {
 function _resetFiltrosNF() {
   ['nf-f-cliente', 'nf-f-mes', 'pn-f-cliente', 'pn-f-mes', 'pn-f-mesprev', 'pn-f-situacao'].forEach(id => {
     const s = document.getElementById(id);
-    if (s) { while (s.options.length > 1) s.remove(1); s.value = ''; }
+    if (s) { while (s.options.length > 1) s.remove(1); s.value = ''; delete s.dataset.sig; }
   });
 }
 
@@ -2797,57 +2797,56 @@ function _posicaoNfLinhas() {
 
 function renderPosicaoNF() {
   const todas = _posicaoNfLinhas();
-  const fCliente = document.getElementById('pn-f-cliente');
-  if (fCliente.options.length <= 1) {
-    const clientes = [...new Set(todas.map(r=>r.cliente).filter(Boolean))].sort();
-    clientes.forEach(c => { const o = document.createElement('option'); o.value = c; o.text = c; fCliente.add(o); });
-  }
-  const fMes = document.getElementById('pn-f-mes');
-  if (fMes.options.length <= 1) {
-    const MES_ABREV_NF = {'01':'Jan','02':'Fev','03':'Mar','04':'Abr','05':'Mai','06':'Jun','07':'Jul','08':'Ago','09':'Set','10':'Out','11':'Nov','12':'Dez'};
-    const meses = [...new Set(todas.map(r=>(r.data_recebimento||'').slice(0,7)).filter(Boolean))].sort();
-    meses.forEach(m => {
-      const o = document.createElement('option');
-      o.value = m;
-      const [y,mm] = m.split('-');
-      o.text = (MES_ABREV_NF[mm]||mm)+'/'+y;
-      fMes.add(o);
-    });
-  }
-  const fMesPrev = document.getElementById('pn-f-mesprev');
-  if (fMesPrev.options.length <= 1) {
-    const ABREV = {'01':'Jan','02':'Fev','03':'Mar','04':'Abr','05':'Mai','06':'Jun','07':'Jul','08':'Ago','09':'Set','10':'Out','11':'Nov','12':'Dez'};
-    [...new Set(todas.map(r=>(r.previsao||'').slice(0,7)).filter(Boolean))].sort().forEach(m => {
-      const o = document.createElement('option'); const [y,mm] = m.split('-');
-      o.value = m; o.text = (ABREV[mm]||mm)+'/'+y; fMesPrev.add(o);
-    });
-    if (todas.some(r => !r.previsao)) { const o = document.createElement('option'); o.value = '__sem__'; o.text = '(sem previsão)'; fMesPrev.add(o); }
-  }
-  const fSit = document.getElementById('pn-f-situacao');
-  if (fSit.options.length <= 1) {
-    const sits = [...new Set(todas.map(r=>r.situacao).filter(Boolean))].sort();
-    sits.forEach(v => { const o = document.createElement('option'); o.value = v; o.text = v; fSit.add(o); });
-    if (todas.some(r => !r.situacao)) { const o = document.createElement('option'); o.value = '__sem__'; o.text = '(sem situação)'; fSit.add(o); }
-  }
-  const cliente = fCliente.value;
-  const status = document.getElementById('pn-f-status').value;
-  const situacao = fSit.value;
-  const mesPrev = fMesPrev.value;
-  const mes = fMes.value;
-  const fIdc = document.getElementById('pn-f-idc').value;
-  const busca = document.getElementById('pn-f-busca').value.trim().toLowerCase();
-
-  let filtradas = todas.filter(r =>
-    (!cliente || r.cliente === cliente) &&
-    (!mes || (r.data_recebimento||'').startsWith(mes)) &&
-    (!status || r.coletada === status) &&
-    (!situacao || (situacao === '__sem__' ? !r.situacao : r.situacao === situacao)) &&
+  // Filtros em cascata: cada lista so mostra valores que existem nas linhas que
+  // passam pelos OUTROS filtros (ex.: se o mes da previsao e setembro, a
+  // situacao so oferece as que existem em setembro).
+  const SEM = '__sem__';
+  const MES_AB = {'01':'Jan','02':'Fev','03':'Mar','04':'Abr','05':'Mai','06':'Jun','07':'Jul','08':'Ago','09':'Set','10':'Out','11':'Nov','12':'Dez'};
+  const mesTxt = m => { const [y,mm] = m.split('-'); return (MES_AB[mm]||mm)+'/'+y; };
+  const el = id => document.getElementById(id);
+  const fIdc = el('pn-f-idc').value;
+  const busca = el('pn-f-busca').value.trim().toLowerCase();
+  const filtros = {
+    cliente:  { sel: el('pn-f-cliente'),  val: r => r.cliente || '', todos: 'Todos' },
+    status:   { sel: el('pn-f-status'),   val: r => r.coletada || '', todos: 'Todos' },
+    situacao: { sel: el('pn-f-situacao'), val: r => r.situacao || '', todos: 'Todas', sem: '(sem situação)' },
+    mes:      { sel: el('pn-f-mes'),      val: r => (r.data_recebimento||'').slice(0,7), todos: 'Todos', fmt: mesTxt },
     // previsao de entrega = data do agendamento quando houver, senao a previsao do portal
-    (!mesPrev || (mesPrev === '__sem__' ? !r.previsao : (r.previsao||'').startsWith(mesPrev)))
-  );
-  if (fIdc==='com') filtradas = filtradas.filter(r => r.id_carregamento);
-  else if (fIdc==='sem') filtradas = filtradas.filter(r => !r.id_carregamento);
-  if (busca) filtradas = filtradas.filter(r => (r.minuta+' '+r.cte+' '+r.nf+' '+(r.id_carregamento||'')).toLowerCase().includes(busca));
+    mesprev:  { sel: el('pn-f-mesprev'),  val: r => (r.previsao||'').slice(0,7), todos: 'Todos', fmt: mesTxt, sem: '(sem previsão)' },
+  };
+  const passa = (r, ignorar) => {
+    for (const k in filtros) {
+      if (k === ignorar) continue;
+      const v = filtros[k].sel.value;
+      if (v && (v === SEM ? !!filtros[k].val(r) : filtros[k].val(r) !== v)) return false;
+    }
+    if (fIdc==='com' && !r.id_carregamento) return false;
+    if (fIdc==='sem' && r.id_carregamento) return false;
+    if (busca && !(r.minuta+' '+r.cte+' '+r.nf+' '+(r.id_carregamento||'')).toLowerCase().includes(busca)) return false;
+    return true;
+  };
+  const montarOpcoes = k => {
+    const f = filtros[k], atual = f.sel.value;
+    const base = todas.filter(r => passa(r, k));
+    const vals = [...new Set(base.map(f.val).filter(Boolean))].sort();
+    const opts = [['', f.todos], ...vals.map(v => [v, f.fmt ? f.fmt(v) : v])];
+    if (f.sem && base.some(r => !f.val(r))) opts.push([SEM, f.sem]);
+    const sig = opts.map(o => o[0]).join('|');
+    if (f.sel.dataset.sig !== sig) {
+      f.sel.innerHTML = '';
+      opts.forEach(([v, t]) => f.sel.add(new Option(t, v)));
+      f.sel.dataset.sig = sig;
+    }
+    f.sel.value = opts.some(o => o[0] === atual) ? atual : '';
+    return f.sel.value !== atual;  // escolha antiga deixou de existir: voltou pra "Todos"
+  };
+  for (let i = 0; i < 4; i++) {
+    let mudou = false;
+    Object.keys(filtros).forEach(k => { if (montarOpcoes(k)) mudou = true; });
+    if (!mudou) break;
+  }
+
+  const filtradas = todas.filter(r => passa(r, null));
 
   // Guardado antes do corte de exibicao (LIMITE), pro Excel levar 100%.
   POSICAONF_EXPORT = filtradas;
