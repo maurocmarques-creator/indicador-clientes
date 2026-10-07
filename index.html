@@ -521,13 +521,17 @@ tr:last-child td{border-bottom:none}
         <select id="pn-f-cliente" onchange="renderPosicaoNF()" style="border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:.8rem;color:#1e293b;background:#fff;cursor:pointer"><option value="">Todos</option></select>
       </div>
       <div style="display:flex;flex-direction:column;gap:3px">
-        <label style="font-size:.75rem;color:var(--gray);font-weight:600">Status</label>
+        <label style="font-size:.75rem;color:var(--gray);font-weight:600">Status da Coleta</label>
         <select id="pn-f-status" onchange="renderPosicaoNF()" style="border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:.8rem;color:#1e293b;background:#fff;cursor:pointer">
           <option value="">Todos</option>
           <option value="Coletado">Coletado</option>
           <option value="NF Recebida e Não Coletado">NF Recebida e Não Coletado</option>
           <option value="Não Coletado">Não Coletado</option>
         </select>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:3px">
+        <label style="font-size:.75rem;color:var(--gray);font-weight:600">Situação da Entrega</label>
+        <select id="pn-f-situacao" onchange="renderPosicaoNF()" style="border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:.8rem;color:#1e293b;background:#fff;cursor:pointer"><option value="">Todas</option></select>
       </div>
       <div style="display:flex;flex-direction:column;gap:3px">
         <label style="font-size:.75rem;color:var(--gray);font-weight:600">ID Carregamento</label>
@@ -1090,7 +1094,7 @@ async function carregarDadosSupabase() {
 // de NF_STATUS; quando o admin troca os clientes selecionados elas precisam
 // voltar so pra "Todos" pra serem remontadas com os dados novos.
 function _resetFiltrosNF() {
-  ['nf-f-cliente', 'nf-f-mes', 'pn-f-cliente', 'pn-f-mes'].forEach(id => {
+  ['nf-f-cliente', 'nf-f-mes', 'pn-f-cliente', 'pn-f-mes', 'pn-f-situacao'].forEach(id => {
     const s = document.getElementById(id);
     if (s) { while (s.options.length > 1) s.remove(1); s.value = ''; }
   });
@@ -2791,8 +2795,15 @@ function renderPosicaoNF() {
       fMes.add(o);
     });
   }
+  const fSit = document.getElementById('pn-f-situacao');
+  if (fSit.options.length <= 1) {
+    const sits = [...new Set(todas.map(r=>r.situacao).filter(Boolean))].sort();
+    sits.forEach(v => { const o = document.createElement('option'); o.value = v; o.text = v; fSit.add(o); });
+    if (todas.some(r => !r.situacao)) { const o = document.createElement('option'); o.value = '__sem__'; o.text = '(sem situação)'; fSit.add(o); }
+  }
   const cliente = fCliente.value;
   const status = document.getElementById('pn-f-status').value;
+  const situacao = fSit.value;
   const mes = fMes.value;
   const fIdc = document.getElementById('pn-f-idc').value;
   const busca = document.getElementById('pn-f-busca').value.trim().toLowerCase();
@@ -2800,7 +2811,8 @@ function renderPosicaoNF() {
   let filtradas = todas.filter(r =>
     (!cliente || r.cliente === cliente) &&
     (!mes || (r.data_recebimento||'').startsWith(mes)) &&
-    (!status || r.coletada === status)
+    (!status || r.coletada === status) &&
+    (!situacao || (situacao === '__sem__' ? !r.situacao : r.situacao === situacao))
   );
   if (fIdc==='com') filtradas = filtradas.filter(r => r.id_carregamento);
   else if (fIdc==='sem') filtradas = filtradas.filter(r => !r.id_carregamento);
